@@ -1,0 +1,194 @@
+library(dplyr)
+library(forcats)
+library(ggplot2)
+library(ggdist)
+library(ggtext)
+library(colorspace)
+library(magick)
+library(grid)
+
+
+  create_raincloud_plot <- function(
+    data, 
+    numeric_var, 
+    group_var,
+    url_img = NULL,
+    pal = c("#FF8C00", "#A034F0", "#159090"),
+    title = "Raincloud Plot",
+    subtitle = "Distribución de la variable numérica por grupo",
+    caption = "Visualización personalizada",
+    xlab = NULL,
+    ylab = NULL,
+    stat_measure = "median",
+    show_density = TRUE,
+    show_boxplot = TRUE,
+    show_points = TRUE,
+    show_stat = TRUE,
+    density_alpha = 0.7,   # Nuevo parámetro para densidad
+    point_alpha = 0.3      # Nuevo parámetro para puntos
+  ) {
+    
+    # Procesar imagen
+    if (!is.null(url_img)) {
+      img <- image_read(url_img)
+      pic <- rasterGrob(img, interpolate = TRUE)
+    }
+    
+    # Función para etiquetas
+    add_sample <- function(x) {
+      c(y = max(x) + 0.025, label = length(x))
+    }
+    
+    # Crear gráfico base
+    p <- data %>%
+      group_by(!!sym(group_var)) %>%
+      mutate(ratio = !!sym(numeric_var)) %>%
+      filter(!is.na(ratio)) %>%
+      ggplot(aes(x = fct_rev(!!sym(group_var)), y = ratio)) 
+    
+    # Añadir elementos condicionalmente
+    if(show_density) {
+      p <- p + stat_halfeye(
+        aes(color = !!sym(group_var), 
+            fill = after_scale(alpha(lighten(color, 0.5), density_alpha))),  # Usa density_alpha
+        adjust = 0.5, width = 0.75, .width = 0, justification = -0.4, point_color = NA
+      )
+    }
+    
+    if(show_boxplot) {
+      p <- p + geom_boxplot(
+        aes(color = stage(!!sym(group_var), after_scale = darken(color, 0.1)),
+            fill = after_scale(desaturate(lighten(color, 0.8), 0.4))),
+        width = 0.42, outlier.shape = NA
+      )
+    }
+    
+    if(show_points) {
+      p <- p + geom_point(
+        aes(color = stage(!!sym(group_var), after_scale = darken(color, 0.1))),
+        fill = "white", shape = 21, stroke = 0.4, size = 2,
+        position = position_jitter(seed = 1, width = 0.12),
+        alpha = point_alpha  # Usa point_alpha
+      ) +
+        geom_point(
+          aes(fill = !!sym(group_var)),
+          color = "transparent", shape = 21, stroke = 0.4, size = 2,
+          position = position_jitter(seed = 1, width = 0.12),
+          alpha = point_alpha  # Usa point_alpha
+        )
+    }
+    
+    # ... (resto del código permanece igual)
+  
+  if(show_stat) {
+    # Añadir estadística
+    stat_fun <- match.fun(stat_measure)
+    
+    p <- p + stat_summary(
+      geom = "text", fun = stat_fun,
+      aes(label = round(after_stat(y), 2),
+          color = stage(!!sym(group_var), after_scale = darken(color, 0.1))),
+      family = "Roboto Mono", fontface = "bold", size = 4.5, vjust = -3.5
+    ) +
+      stat_summary(
+        geom = "text", fun.data = add_sample,
+        aes(label = paste("n =", after_stat(label)),
+            color = stage(!!sym(group_var), after_scale = darken(color, 0.1))),
+        family = "Roboto Condensed", size = 4, hjust = 0
+      )
+  }
+  
+  # Escala Y dinámica
+  y_breaks <- seq(
+    min(data[[numeric_var]], na.rm = TRUE),
+    max(data[[numeric_var]], na.rm = TRUE),
+    by = (max(data[[numeric_var]], na.rm = TRUE) - min(data[[numeric_var]], na.rm = TRUE))/10
+  )
+  
+  # Completar gráfico
+  p <- p + coord_flip(xlim = c(1.2, NA), clip = "off") +
+    scale_y_continuous(
+      limits = c(
+        min(data[[numeric_var]], na.rm = TRUE)*0.9,
+        max(data[[numeric_var]], na.rm = TRUE)*1.1
+      ),
+      breaks = y_breaks,
+      expand = c(0.001, 0.001)
+    ) +
+    scale_color_manual(values = pal, guide = "none") +
+    scale_fill_manual(values = pal, guide = "none") +
+    labs(
+      x = if(is.null(xlab)) group_var else xlab,
+      y = if(is.null(ylab)) numeric_var else ylab,
+      title = title,
+      subtitle = subtitle,
+      caption = caption
+    ) +
+    theme_minimal(base_family = "Zilla Slab", base_size = 15) +
+    theme(
+      panel.grid.minor = element_blank(),
+      panel.grid.major.y = element_blank(),
+      axis.ticks = element_blank(),
+      axis.text.x = element_text(family = "Roboto Mono"),
+      axis.text.y = element_text(
+        color = rev(darken(pal, 0.1)), 
+        size = 18
+      ),
+      axis.title.x = element_text(margin = margin(t = 10), size = 16),
+      plot.title = element_markdown(face = "bold", size = 21),
+      plot.subtitle = element_text(
+        color = "grey40", hjust = 0,
+        margin = margin(0, 0, 20, 0)
+      ),
+      plot.title.position = "plot",
+      plot.caption = element_markdown(
+        color = "grey40", lineheight = 1.2,
+        margin = margin(20, 0, 0, 0)),
+      plot.margin = margin(15, 15, 10, 15)
+    )
+  
+  # Añadir imagen si existe
+  if(!is.null(url_img)) {
+    p <- p + annotation_custom(pic, ymin = 2.9, ymax = 3.85, xmin = 2.7, xmax = 4.7)
+  }
+  
+  return(p)
+}
+
+# Ejemplo de uso
+# create_raincloud_plot(
+#   data = datos,
+#   numeric_var = "LoanAmount",
+#   group_var = "Property_Area",
+#   pal = c("#FF8C00", "#A034F0", "#159090"),
+#   title = "Raincloud Plot",
+#   subtitle = "Distribución del monto de préstamo por Tipo de Propiedad",
+#   xlab = "Área de Propiedad",
+#   ylab = "Monto del Préstamo",
+#   stat_measure = "mean",
+#   show_density = FALSE,
+#   show_boxplot = TRUE,
+#   show_points = TRUE,
+#   show_stat = TRUE
+# )
+
+
+create_raincloud_plot(
+  data = datos,
+  numeric_var = "LoanAmount",
+  group_var = "Property_Area",
+  pal = c("#FF5733", "purple", "#3357FF"),
+  title = "Análisis de Préstamos",
+  subtitle = "Monto solicitado por ubicación",
+  xlab = NULL,
+  ylab = NULL,
+  stat_measure = "sd",
+  show_density = T,
+  show_boxplot = T,
+  show_points = T,
+  point_alpha = 0.2,
+  density_alpha = 0.6)
+
+
+
+
