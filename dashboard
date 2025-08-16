@@ -1,0 +1,123 @@
+library(shiny)
+library(shinydashboard)
+library(ggplot2)
+
+ui <- dashboardPage(
+  
+  # 1. Header (encabezado superior)
+  dashboardHeader(title = "Reporte de Fraude"),
+  
+  # 2. Sidebar (menú lateral con pestañas)
+  dashboardSidebar(
+    sidebarMenu(
+      menuItem("Resumen General", tabName = "resumen", icon = icon("dashboard")),
+      menuItem("Análisis Gráficos", tabName = "graficos", icon = icon("chart-bar")),
+      menuItem("Detalle Transacciones", tabName = "detalle", icon = icon("table"))
+    )
+  ),
+  
+  # 3. Body (contenido principal por pestañas)
+  dashboardBody(
+    tabItems(
+      
+      # Pestaña 1: Resumen
+      tabItem(tabName = "resumen",
+              fluidRow(
+                valueBoxOutput("total_tx"),
+                valueBoxOutput("fraude_tx"),
+                valueBoxOutput("ratio_fraude")
+              )
+      ),
+      
+      # Pestaña 2: Gráficos
+      tabItem(tabName = "graficos",
+              fluidRow(
+                box(title = "Top Comercios Sospechosos", width = 6, solidHeader = TRUE, status = "warning",
+                    sliderInput("top_comercios", "Seleccione Top N:", min = 5, max = 20, value = 10),
+                    plotOutput("grafico1")
+                ),
+                box(title = "Top Tarjetas en Riesgo", width = 6, solidHeader = TRUE, status = "danger",
+                    sliderInput("top_tarjetas", "Seleccione Top N:", min = 5, max = 20, value = 10),
+                    plotOutput("grafico2")
+                )
+              ),
+              fluidRow(
+                box(title = "Tendencia Temporal", width = 6, solidHeader = TRUE, status = "primary",
+                    plotOutput("grafico3")
+                ),
+                box(title = "Mapa de Transacciones", width = 6, solidHeader = TRUE, status = "success",
+                    plotOutput("grafico4")
+                )
+              )
+      ),
+      
+      # Pestaña 3: Detalle de transacciones
+      tabItem(tabName = "detalle",
+              fluidRow(
+                box(title = "Tabla Detallada", width = 12,
+                    dataTableOutput("tabla_tx"))
+              )
+      )
+    )
+  )
+)
+
+# SERVER
+server <- function(input, output) {
+  
+  # Ejemplo de cajas resumen
+  output$total_tx <- renderValueBox({
+    valueBox(10000, "Total de Transacciones", icon = icon("credit-card"), color = "blue")
+  })
+  
+  output$fraude_tx <- renderValueBox({
+    valueBox(739, "Transacciones Fraudulentas", icon = icon("exclamation-triangle"), color = "red")
+  })
+  
+  output$ratio_fraude <- renderValueBox({
+    valueBox(paste0(round(739/10000*100,2), "%"), "Ratio Fraude", icon = icon("percentage"), color = "yellow")
+  })
+  
+  # Gráfico 1 - Comercios
+  output$grafico1 <- renderPlot({
+    df <- data.frame(Comercio = paste("Comercio", 1:input$top_comercios),
+                     Frecuencia = sample(50:200, input$top_comercios))
+    ggplot(df, aes(x = reorder(Comercio, -Frecuencia), y = Frecuencia)) +
+      geom_bar(stat = "identity", fill = "orange") +
+      coord_flip() + labs(x = "Comercio", y = "Frecuencia")
+  })
+  
+  # Gráfico 2 - Tarjetas
+  output$grafico2 <- renderPlot({
+    df <- data.frame(Tarjeta = paste("Tarjeta", 1:input$top_tarjetas),
+                     Riesgo = sample(30:150, input$top_tarjetas))
+    ggplot(df, aes(x = reorder(Tarjeta, -Riesgo), y = Riesgo)) +
+      geom_bar(stat = "identity", fill = "red") +
+      coord_flip() + labs(x = "Tarjeta", y = "Nivel de Riesgo")
+  })
+  
+  # Gráfico 3 - Tendencia temporal
+  output$grafico3 <- renderPlot({
+    df <- data.frame(Dia = 1:30, Tx = cumsum(rpois(30, 200)))
+    ggplot(df, aes(x = Dia, y = Tx)) +
+      geom_line(color = "blue", size = 1.2) +
+      labs(x = "Día", y = "Transacciones")
+  })
+  
+  # Gráfico 4 - (ejemplo simple de mapa o puntos)
+  output$grafico4 <- renderPlot({
+    df <- data.frame(Long = rnorm(100, -77), Lat = rnorm(100, -12))
+    ggplot(df, aes(x = Long, y = Lat)) +
+      geom_point(color = "green") +
+      labs(x = "Longitud", y = "Latitud")
+  })
+  
+  # Tabla de transacciones
+  output$tabla_tx <- renderDataTable({
+    data.frame(ID = 1:20,
+               Monto = runif(20, 10, 500),
+               Estado = sample(c("Normal","Fraude"), 20, replace = TRUE))
+  })
+}
+
+shinyApp(ui, server)
