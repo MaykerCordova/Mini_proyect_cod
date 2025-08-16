@@ -190,5 +190,22 @@ create_raincloud_plot(
   density_alpha = 0.6)
 
 
-
+  sidebarLayout(
+    sidebarPanel(
+      sliderInput("topN", "Selecciona Top N:", 
+                  min = 3, max = 15, value = 5, step = 1)
+    ),
+    
+    mainPanel(
+      fluidRow(
+        column(6, plotOutput("graf1")),
+        column(6, plotOutput("graf2"))
+      ),
+      fluidRow(
+        column(6, plotOutput("graf3_top")),
+        column(6, plotOutput("graf4_top"))
+      )
+    )
+  )
+)
 
