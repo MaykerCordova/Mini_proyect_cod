@@ -1,4 +1,4 @@
-library(pivottabler)
+²library(pivottabler)
 
 # Crear la tabla dinámica usando qhpvt
 tablal <- qhpvt(
@@ -31,3 +31,32 @@ tablal <- qhpvt(
 
 # Mostrar la tabla
 print(tablal)
+
+.....2
+
+library(pivottabler)
+
+# Crear la tabla dinámica
+pt <- PivotTable$new()
+
+# Agregar datos
+pt$addData(data_con_marcas)
+
+# Agrupar por Authentication_Type, Authentication_Status y Marked_As
+pt$addRowDataGroups("Authentication_Type", addTotal = TRUE)
+pt$addRowDataGroups("Authentication_Status", addTotal = TRUE)
+pt$addRowDataGroups("Marked_As", addTotal = TRUE)
+
+# Definir cálculos
+pt$defineCalculation(calculationName = "Numero_Tarjetas", 
+                     summariseExpression = "n_distinct(PAN)", 
+                     caption = "Nº Tarjetas Únicas")
+pt$defineCalculation(calculationName = "Numero_Transacciones", 
+                     summariseExpression = "n()", 
+                     caption = "Nº Transacciones")
+pt$defineCalculation(calculationName = "Monto_Dolares", 
+                     summariseExpression = "sum(Purchase_Amount_USD, na.rm = TRUE)", 
+                     caption = "Total USD")
+
+# Renderizar la tabla
+print(pt)
