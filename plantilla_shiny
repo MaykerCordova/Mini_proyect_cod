@@ -1,178 +1,182 @@
+# ============================
+# Shiny Dashboard Estructura
+# ============================
+
+# Paquetes necesarios
 library(shiny)
 library(shinydashboard)
-library(DT)         # Para tablas interactivas
-library(ggplot2)    # Para gráficos
-library(dplyr)      # Para manipulación de datos
-library(pivottabler) # Para tablas dinámicas, si lo usas
+library(ggplot2)
+library(DT)
 
-# Asume que tienes un dataframe llamado 'data' con tus datos
-# Cambia 'data' por tu dataframe real, como 'data_con_marcas'
-data <- mtcars  # Ejemplo placeholder; cámbialo por tus datos reales
+# ----------------------------
+# UI (Interfaz de Usuario)
+# ----------------------------
 
-# UI: Estructura del Dashboard
 ui <- dashboardPage(
-  # Encabezado
-  dashboardHeader(title = "Mi Dashboard de Análisis"),
+  # Cabecera de la app
+  dashboardHeader(title = "Dashboard de Detección de Fraude"),
   
-  # Barra Lateral (Sidebar) con Menú de Pestañas
+  # Barra lateral (navegación entre pestañas)
   dashboardSidebar(
     sidebarMenu(
-      menuItem("Resumen KPIs", tabName = "kpis", icon = icon("dashboard")),
+      menuItem("Resumen KPIs", tabName = "resumen", icon = icon("chart-line")),
       menuItem("Gráficos Univariados", tabName = "univariados", icon = icon("chart-bar")),
-      menuItem("Gráficos Bivariados", tabName = "bivariados", icon = icon("chart-area")),
-      menuItem("Tablas Dinámicas", tabName = "tablas_dinamicas", icon = icon("table"))
+      menuItem("Gráficos Bivariados/Multivariados", tabName = "bivariados", icon = icon("project-diagram")),
+      menuItem("Tablas Dinámicas", tabName = "tablas", icon = icon("table"))
     )
   ),
   
-  # Cuerpo del Dashboard con Pestañas
+  # Contenido principal
   dashboardBody(
     tabItems(
-      # Primera Pestaña: Resumen de KPIs
-      tabItem(tabName = "kpis",
+      
+      # =======================
+      # 1. RESUMEN DE KPIs
+      # =======================
+      tabItem(tabName = "resumen",
               fluidRow(
-                box(
-                  title = "Resumen de KPIs",
-                  width = 12,
-                  background = "light-blue",
-                  solidHeader = TRUE,
-                  collapsible = TRUE,
-                  # Ejemplo de KPIs en valueBoxes
-                  valueBoxOutput("kpi1"),
-                  valueBoxOutput("kpi2"),
-                  valueBoxOutput("kpi3")
-                )
+                # Cajas de KPIs principales
+                valueBoxOutput("kpi_fraude", width = 3),
+                valueBoxOutput("kpi_buenas", width = 3),
+                valueBoxOutput("kpi_alertas", width = 3),
+                valueBoxOutput("kpi_indeterminado", width = 3)
               ),
               fluidRow(
-                box(
-                  title = "Descripción Adicional de KPIs",
-                  width = 12,
-                  p("Aquí puedes agregar texto o más detalles sobre los KPIs.")
-                )
+                box(title = "Resumen General", width = 12, solidHeader = TRUE, status = "primary",
+                    "Aquí puedes poner un gráfico general, por ejemplo evolución mensual de fraudes.")
               )
       ),
       
-      # Segunda Pestaña: Gráficos Univariados
+      # =======================
+      # 2. GRÁFICOS UNIVARIADOS
+      # =======================
       tabItem(tabName = "univariados",
               fluidRow(
-                box(
-                  title = "Gráficos Univariados",
-                  width = 12,
-                  solidHeader = TRUE,
-                  collapsible = TRUE,
-                  plotOutput("univariado1"),
-                  plotOutput("univariado2")
-                )
+                box(title = "Histograma de Montos", width = 6, solidHeader = TRUE, status = "info",
+                    plotOutput("hist_montos")),
+                box(title = "Distribución por Comercio", width = 6, solidHeader = TRUE, status = "info",
+                    plotOutput("bar_comercios"))
               )
       ),
       
-      # Tercera Pestaña: Gráficos Bivariados
+      # ===============================
+      # 3. GRÁFICOS BIVARIADOS/MULTI
+      # ===============================
       tabItem(tabName = "bivariados",
               fluidRow(
-                box(
-                  title = "Gráficos Bivariados",
-                  width = 12,
-                  solidHeader = TRUE,
-                  collapsible = TRUE,
-                  plotOutput("bivariado1"),
-                  plotOutput("bivariado2")
-                )
+                box(title = "Monto vs Tiempo", width = 6, solidHeader = TRUE, status = "warning",
+                    plotOutput("scatter_monto_tiempo")),
+                box(title = "Correlación entre variables", width = 6, solidHeader = TRUE, status = "warning",
+                    plotOutput("cor_matrix"))
               )
       ),
       
-      # Cuarta Pestaña: Tablas Dinámicas
-      tabItem(tabName = "tablas_dinamicas",
+      # =======================
+      # 4. TABLAS DINÁMICAS
+      # =======================
+      tabItem(tabName = "tablas",
               fluidRow(
-                box(
-                  title = "Tablas Dinámicas",
-                  width = 12,
-                  solidHeader = TRUE,
-                  collapsible = TRUE,
-                  DTOutput("tabla_dinamica")  # Para tabla interactiva con DT
-                )
+                box(title = "Exploración de Datos", width = 12, solidHeader = TRUE, status = "success",
+                    DTOutput("tabla_dinamica"))
               )
       )
     )
   )
 )
 
-# Server: Lógica del Dashboard
+# ----------------------------
+# SERVER (Lógica de la app)
+# ----------------------------
+
 server <- function(input, output) {
   
-  # Primera Pestaña: Resumen de KPIs
-  # Cambia los cálculos por tus KPIs reales
-  output$kpi1 <- renderValueBox({
-    valueBox(
-      value = nrow(data),  # Ejemplo: Total de filas/transacciones
-      subtitle = "Total Transacciones",
-      icon = icon("list"),
-      color = "blue"
-    )
+  # Simulamos dataset de ejemplo (tú lo reemplazas con tus datos de fraude)
+  set.seed(123)
+  Data <- data.frame(
+    monto = rnorm(1000, mean = 100, sd = 50),
+    comercio = sample(c("A", "B", "C", "D"), 1000, replace = TRUE),
+    tiempo = sample(1:12, 1000, replace = TRUE),
+    fraude = sample(c("Fraude", "Bueno", "Indeterminado", "Alerta"), 1000, replace = TRUE)
+  )
+  
+  # =======================
+  # 1. RESUMEN DE KPIs
+  # =======================
+  output$kpi_fraude <- renderValueBox({
+    valueBox(sum(Data$fraude == "Fraude"),
+             subtitle = "Casos de Fraude",
+             icon = icon("skull-crossbones"),
+             color = "red")
   })
   
-  output$kpi2 <- renderValueBox({
-    valueBox(
-      value = sum(data$mpg, na.rm = TRUE),  # Ejemplo: Suma de una columna
-      subtitle = "Monto Total (USD)",
-      icon = icon("dollar-sign"),
-      color = "green"
-    )
+  output$kpi_buenas <- renderValueBox({
+    valueBox(sum(Data$fraude == "Bueno"),
+             subtitle = "Casos Buenos",
+             icon = icon("thumbs-up"),
+             color = "green")
   })
   
-  output$kpi3 <- renderValueBox({
-    valueBox(
-      value = mean(data$hp, na.rm = TRUE),  # Ejemplo: Promedio de una columna
-      subtitle = "Promedio de Algo",
-      icon = icon("calculator"),
-      color = "yellow"
-    )
+  output$kpi_alertas <- renderValueBox({
+    valueBox(sum(Data$fraude == "Alerta"),
+             subtitle = "Alertas Detectadas",
+             icon = icon("exclamation-triangle"),
+             color = "yellow")
   })
   
-  # Segunda Pestaña: Gráficos Univariados
-  # Cambia los gráficos por tus análisis univariados reales
-  output$univariado1 <- renderPlot({
-    ggplot(data, aes(x = mpg)) +
-      geom_histogram(bins = 10, fill = "blue", color = "black") +
-      labs(title = "Distribución de MPG", x = "MPG", y = "Frecuencia") +
-      theme_minimal()
+  output$kpi_indeterminado <- renderValueBox({
+    valueBox(sum(Data$fraude == "Indeterminado"),
+             subtitle = "Casos Indeterminados",
+             icon = icon("question"),
+             color = "blue")
   })
   
-  output$univariado2 <- renderPlot({
-    ggplot(data, aes(x = factor(cyl))) +
-      geom_bar(fill = "green") +
-      labs(title = "Conteo por Cilindros", x = "Cilindros", y = "Conteo") +
-      theme_minimal()
+  # =======================
+  # 2. GRÁFICOS UNIVARIADOS
+  # =======================
+  output$hist_montos <- renderPlot({
+    ggplot(Data, aes(x = monto)) +
+      geom_histogram(fill = "steelblue", bins = 30) +
+      theme_minimal() +
+      labs(title = "Distribución de Montos")
   })
   
-  # Tercera Pestaña: Gráficos Bivariados
-  # Cambia los gráficos por tus análisis bivariados reales
-  output$bivariado1 <- renderPlot({
-    ggplot(data, aes(x = mpg, y = hp)) +
-      geom_point(color = "red") +
-      geom_smooth(method = "lm", se = FALSE) +
-      labs(title = "Relación entre MPG y HP", x = "MPG", y = "HP") +
-      theme_minimal()
+  output$bar_comercios <- renderPlot({
+    ggplot(Data, aes(x = comercio)) +
+      geom_bar(fill = "orange") +
+      theme_minimal() +
+      labs(title = "Transacciones por Comercio")
   })
   
-  output$bivariado2 <- renderPlot({
-    ggplot(data, aes(x = factor(cyl), y = mpg)) +
-      geom_boxplot(fill = "purple") +
-      labs(title = "MPG por Cilindros", x = "Cilindros", y = "MPG") +
-      theme_minimal()
+  # ===============================
+  # 3. GRÁFICOS BIVARIADOS/MULTI
+  # ===============================
+  output$scatter_monto_tiempo <- renderPlot({
+    ggplot(Data, aes(x = tiempo, y = monto, color = fraude)) +
+      geom_point(alpha = 0.6) +
+      theme_minimal() +
+      labs(title = "Monto vs Tiempo por Tipo de Caso")
   })
   
-  # Cuarta Pestaña: Tablas Dinámicas
-  # Cambia por tu tabla de pivottabler real
-  output$tabla_dinamica <- renderDataTable({
-    # Ejemplo placeholder; reemplaza por tu lógica de pivottabler
-    pt <- PivotTable$new()
-    pt$addData(data)
-    pt$addRowDataGroups("cyl", addTotal = TRUE)
-    pt$defineCalculation(calculationName = "Media_MPG", summariseExpression = "mean(mpg, na.rm = TRUE)", caption = "Media MPG")
-    pt$evaluatePivot()
-    
-    datatable(as.data.frame(pt), options = list(pageLength = 10, searching = TRUE, ordering = TRUE))
+  output$cor_matrix <- renderPlot({
+    # Seleccionamos solo numéricas
+    num_data <- Data[, sapply(Data, is.numeric)]
+    corr <- cor(num_data)
+    ggplot(melt(corr), aes(Var1, Var2, fill = value)) +
+      geom_tile() +
+      scale_fill_gradient2(low = "blue", high = "red", mid = "white") +
+      theme_minimal() +
+      labs(title = "Matriz de Correlación")
+  })
+  
+  # =======================
+  # 4. TABLAS DINÁMICAS
+  # =======================
+  output$tabla_dinamica <- renderDT({
+    datatable(Data, options = list(pageLength = 10, scrollX = TRUE))
   })
 }
 
-# Ejecutar la aplicación
-shinyApp(ui = ui, server = server)
+# ----------------------------
+# Lanzar la app
+# ----------------------------
+shinyApp(ui, server)
