@@ -1,0 +1,87 @@
+library(ggraph)
+library(tidygraph)
+
+edges <- datos %>%
+  filter(`Marked As` == "Fraud") %>%
+  group_by(PAN) %>%
+  summarise(auths = list(unique(Authentication_Type)), .groups = "drop") %>%
+  unnest(auths) %>%
+  pairwise_count(item = auths, feature = PAN)          # tidygraph
+
+edges %>%
+  as_tbl_graph() %>%
+  ggraph(layout = "fr") +
+  geom_edge_link(aes(edge_alpha = n), show.legend = FALSE) +
+  geom_node_point(aes(size = centrality_authority()), colour = "#E64B35") +
+  geom_node_text(aes(label = name), repel = TRUE) +
+  theme_graph() +
+  labs(title = "¿Qué tipos de autenticación están ligados por las mismas tarjetas fraudulentas?")
+
+_________________
+
+library(treemapify)
+library(plotly)
+
+treemap_df <- datos %>%
+  filter(`Marked As` == "Fraud") %>%
+  mutate(bin = substr(PAN, 1, 6)) %>%
+  group_by(bin, Authentication_Type) %>%
+  summarise(loss = sum(`Amount_(USD)`, na.rm = TRUE), .groups = "drop")
+
+ggplotly(
+  ggplot(treemap_df,
+         aes(area = loss, fill = loss, label = bin, subgroup = Authentication_Type)) +
+    geom_treemap() +
+    geom_treemap_text(colour = "white", place = "centre") +
+    scale_fill_viridis_c(name = "$ Fraude") +
+    theme_void()
+)
+
+______________
+
+library(ggbeeswarm)
+
+ggplot(datos %>% filter(`Marked As` == "Fraud"),
+       aes(x = Authentication_Type, y = `Amount_(USD)`)) +
+  geom_violin(fill = NA, colour = "#1A1A1A") +
+  geom_beeswarm(aes(colour = Authentication_Status), 
+                size = 1.2, cex = 2.5) +
+  scale_y_log10(labels = scales::dollar) +
+  coord_flip() +
+  theme_minimal() +
+  labs(title = "Distribución de montos fraudulentos por BIN y tipo de auth")
+___________________
+
+library(lubridate)
+
+heatmap_df <- datos %>%
+  mutate(
+    hora = hour(as.POSIXct(`Transaction_DateTime`, format = "%d/%m %H:%M")),
+    dia  = wday(`Transaction_DateTime`, label = TRUE)
+  ) %>%
+  count(dia, hora, `Marked As`) %>%
+  pivot_wider(names_from = `Marked As`, values_from = n, values_fill = 0) %>%
+  mutate(ratio = Fraud / (Good + Fraud))
+
+ggplot(heatmap_df, aes(hora, dia, fill = ratio)) +
+  geom_tile() +
+  scale_fill_viridis_c(labels = scales::percent) +
+  theme_minimal() +
+  labs(title = "Fraude por hora y día de la semana")
+_________
+
+library(gganimate)
+
+evol <- datos %>%
+  mutate(fecha = as.Date(`Transaction_DateTime`, format = "%d/%m %Y")) %>%
+  group_by(fecha, Authentication_Type) %>%
+  summarise(loss = sum(`Amount_(USD)` * (`Marked As` == "Fraud"), na.rm = TRUE),
+            .groups = "drop")
+
+ggplot(evol, aes(fecha, loss, colour = Authentication_Type)) +
+  geom_line() +
+  geom_point() +
+  transition_reveal(fecha) +
+  ease_aes("cubic-in-out") +
+  labs(title = "Evolución diaria de pérdidas por tipo de autenticación") +
+  theme_minimal()
