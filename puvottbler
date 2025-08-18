@@ -1,4 +1,4 @@
-²library(pivottabler)
+2²library(pivottabler)
 
 # Crear la tabla dinámica usando qhpvt
 tablal <- qhpvt(
@@ -57,6 +57,47 @@ pt$defineCalculation(calculationName = "Numero_Transacciones",
 pt$defineCalculation(calculationName = "Monto_Dolares", 
                      summariseExpression = "sum(Purchase_Amount_USD, na.rm = TRUE)", 
                      caption = "Total USD")
+
+# Renderizar la tabla
+print(pt)
+
+.....5
+
+library(pivottabler)
+
+# Crear la tabla dinámica
+pt <- PivotTable$new()
+
+# Agregar datos
+pt$addData(data_con_marcas)
+
+# Agrupar por Authentication_Type, Authentication_Status y Marked_As
+pt$addRowDataGroups("Authentication_Type", addTotal = TRUE)
+pt$addRowDataGroups("Authentication_Status", addTotal = TRUE)
+pt$addRowDataGroups("Marked_As", addTotal = TRUE)
+
+# Definir cálculos
+pt$defineCalculation(calculationName = "Numero_Tarjetas", 
+                     summariseExpression = "n_distinct(PAN)", 
+                     caption = "Nº Tarjetas Únicas")
+pt$defineCalculation(calculationName = "Numero_Transacciones", 
+                     summariseExpression = "n()", 
+                     caption = "Nº Transacciones")
+pt$defineCalculation(calculationName = "Monto_Dolares", 
+                     summariseExpression = "sum(Purchase_Amount_USD, na.rm = TRUE)", 
+                     caption = "Total USD")
+
+# Evaluar y personalizar la tabla
+pt$evaluatePivot()
+
+# Aplicar estilo y formato
+pt$theme <- "compact"  # Estilo compacto y limpio
+pt$dataCellStyle <- list("border" = "1px solid #000000", "padding" = "2px", "text-align" = "center")  # Bordes y centrado
+pt$totalCellStyle <- list("border" = "2px solid #000000", "background-color" = "#f0f0f0", "font-weight" = "bold", "text-align" = "center")  # Bordes más gruesos y fondo gris para totales
+pt$captionStyle <- list("font-size" = "14px", "font-weight" = "bold", "text-align" = "center")  # Título más destacado
+
+# Formatear números (ej. agregar separadores de miles y símbolo de dólar)
+pt$formatNumericValues(digits = 2, format = "$#,##0.00", protect = TRUE)  # Formato de moneda
 
 # Renderizar la tabla
 print(pt)
