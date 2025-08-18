@@ -13,3 +13,21 @@ tablal <- qhpvt(
 
 # Mostrar la tabla
 print(tablal)
+
+.....
+
+library(pivottabler)
+
+# Crear la tabla dinámica usando qhpvt
+tablal <- qhpvt(
+  data = data_con_marcas,
+  rows = c("Authentication_Type", "Authentication_Status", "Marked_As"),
+  calculations = list(
+    list("n_distinct(PAN)", "Nº Tarjetas Únicas"),
+    list("n()", "Nº Transacciones"),
+    list("sum(Purchase_Amount_USD, na.rm = TRUE)", "Total USD")
+  )
+)
+
+# Mostrar la tabla
+print(tablal)
