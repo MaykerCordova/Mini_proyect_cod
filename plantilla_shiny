@@ -1,0 +1,178 @@
+library(shiny)
+library(shinydashboard)
+library(DT)         # Para tablas interactivas
+library(ggplot2)    # Para gráficos
+library(dplyr)      # Para manipulación de datos
+library(pivottabler) # Para tablas dinámicas, si lo usas
+
+# Asume que tienes un dataframe llamado 'data' con tus datos
+# Cambia 'data' por tu dataframe real, como 'data_con_marcas'
+data <- mtcars  # Ejemplo placeholder; cámbialo por tus datos reales
+
+# UI: Estructura del Dashboard
+ui <- dashboardPage(
+  # Encabezado
+  dashboardHeader(title = "Mi Dashboard de Análisis"),
+  
+  # Barra Lateral (Sidebar) con Menú de Pestañas
+  dashboardSidebar(
+    sidebarMenu(
+      menuItem("Resumen KPIs", tabName = "kpis", icon = icon("dashboard")),
+      menuItem("Gráficos Univariados", tabName = "univariados", icon = icon("chart-bar")),
+      menuItem("Gráficos Bivariados", tabName = "bivariados", icon = icon("chart-area")),
+      menuItem("Tablas Dinámicas", tabName = "tablas_dinamicas", icon = icon("table"))
+    )
+  ),
+  
+  # Cuerpo del Dashboard con Pestañas
+  dashboardBody(
+    tabItems(
+      # Primera Pestaña: Resumen de KPIs
+      tabItem(tabName = "kpis",
+              fluidRow(
+                box(
+                  title = "Resumen de KPIs",
+                  width = 12,
+                  background = "light-blue",
+                  solidHeader = TRUE,
+                  collapsible = TRUE,
+                  # Ejemplo de KPIs en valueBoxes
+                  valueBoxOutput("kpi1"),
+                  valueBoxOutput("kpi2"),
+                  valueBoxOutput("kpi3")
+                )
+              ),
+              fluidRow(
+                box(
+                  title = "Descripción Adicional de KPIs",
+                  width = 12,
+                  p("Aquí puedes agregar texto o más detalles sobre los KPIs.")
+                )
+              )
+      ),
+      
+      # Segunda Pestaña: Gráficos Univariados
+      tabItem(tabName = "univariados",
+              fluidRow(
+                box(
+                  title = "Gráficos Univariados",
+                  width = 12,
+                  solidHeader = TRUE,
+                  collapsible = TRUE,
+                  plotOutput("univariado1"),
+                  plotOutput("univariado2")
+                )
+              )
+      ),
+      
+      # Tercera Pestaña: Gráficos Bivariados
+      tabItem(tabName = "bivariados",
+              fluidRow(
+                box(
+                  title = "Gráficos Bivariados",
+                  width = 12,
+                  solidHeader = TRUE,
+                  collapsible = TRUE,
+                  plotOutput("bivariado1"),
+                  plotOutput("bivariado2")
+                )
+              )
+      ),
+      
+      # Cuarta Pestaña: Tablas Dinámicas
+      tabItem(tabName = "tablas_dinamicas",
+              fluidRow(
+                box(
+                  title = "Tablas Dinámicas",
+                  width = 12,
+                  solidHeader = TRUE,
+                  collapsible = TRUE,
+                  DTOutput("tabla_dinamica")  # Para tabla interactiva con DT
+                )
+              )
+      )
+    )
+  )
+)
+
+# Server: Lógica del Dashboard
+server <- function(input, output) {
+  
+  # Primera Pestaña: Resumen de KPIs
+  # Cambia los cálculos por tus KPIs reales
+  output$kpi1 <- renderValueBox({
+    valueBox(
+      value = nrow(data),  # Ejemplo: Total de filas/transacciones
+      subtitle = "Total Transacciones",
+      icon = icon("list"),
+      color = "blue"
+    )
+  })
+  
+  output$kpi2 <- renderValueBox({
+    valueBox(
+      value = sum(data$mpg, na.rm = TRUE),  # Ejemplo: Suma de una columna
+      subtitle = "Monto Total (USD)",
+      icon = icon("dollar-sign"),
+      color = "green"
+    )
+  })
+  
+  output$kpi3 <- renderValueBox({
+    valueBox(
+      value = mean(data$hp, na.rm = TRUE),  # Ejemplo: Promedio de una columna
+      subtitle = "Promedio de Algo",
+      icon = icon("calculator"),
+      color = "yellow"
+    )
+  })
+  
+  # Segunda Pestaña: Gráficos Univariados
+  # Cambia los gráficos por tus análisis univariados reales
+  output$univariado1 <- renderPlot({
+    ggplot(data, aes(x = mpg)) +
+      geom_histogram(bins = 10, fill = "blue", color = "black") +
+      labs(title = "Distribución de MPG", x = "MPG", y = "Frecuencia") +
+      theme_minimal()
+  })
+  
+  output$univariado2 <- renderPlot({
+    ggplot(data, aes(x = factor(cyl))) +
+      geom_bar(fill = "green") +
+      labs(title = "Conteo por Cilindros", x = "Cilindros", y = "Conteo") +
+      theme_minimal()
+  })
+  
+  # Tercera Pestaña: Gráficos Bivariados
+  # Cambia los gráficos por tus análisis bivariados reales
+  output$bivariado1 <- renderPlot({
+    ggplot(data, aes(x = mpg, y = hp)) +
+      geom_point(color = "red") +
+      geom_smooth(method = "lm", se = FALSE) +
+      labs(title = "Relación entre MPG y HP", x = "MPG", y = "HP") +
+      theme_minimal()
+  })
+  
+  output$bivariado2 <- renderPlot({
+    ggplot(data, aes(x = factor(cyl), y = mpg)) +
+      geom_boxplot(fill = "purple") +
+      labs(title = "MPG por Cilindros", x = "Cilindros", y = "MPG") +
+      theme_minimal()
+  })
+  
+  # Cuarta Pestaña: Tablas Dinámicas
+  # Cambia por tu tabla de pivottabler real
+  output$tabla_dinamica <- renderDataTable({
+    # Ejemplo placeholder; reemplaza por tu lógica de pivottabler
+    pt <- PivotTable$new()
+    pt$addData(data)
+    pt$addRowDataGroups("cyl", addTotal = TRUE)
+    pt$defineCalculation(calculationName = "Media_MPG", summariseExpression = "mean(mpg, na.rm = TRUE)", caption = "Media MPG")
+    pt$evaluatePivot()
+    
+    datatable(as.data.frame(pt), options = list(pageLength = 10, searching = TRUE, ordering = TRUE))
+  })
+}
+
+# Ejecutar la aplicación
+shinyApp(ui = ui, server = server)
