@@ -1,0 +1,191 @@
+# ============================
+# Shiny Dashboard con pivottabler
+# ============================
+
+library(shiny)
+library(shinydashboard)
+library(ggplot2)
+library(DT)
+library(pivottabler)
+
+# ----------------------------
+# UI
+# ----------------------------
+ui <- dashboardPage(
+  dashboardHeader(title = "Dashboard de Detección de Fraude"),
+  
+  dashboardSidebar(
+    sidebarMenu(
+      menuItem("Resumen KPIs", tabName = "resumen", icon = icon("chart-line")),
+      menuItem("Gráficos Univariados", tabName = "univariados", icon = icon("chart-bar")),
+      menuItem("Gráficos Bivariados/Multivariados", tabName = "bivariados", icon = icon("project-diagram")),
+      menuItem("Tablas Dinámicas", tabName = "tablas", icon = icon("table"))
+    )
+  ),
+  
+  dashboardBody(
+    tabItems(
+      # =======================
+      # 1. RESUMEN DE KPIs
+      # =======================
+      tabItem(tabName = "resumen",
+              fluidRow(
+                valueBoxOutput("kpi_fraude", width = 3),
+                valueBoxOutput("kpi_buenas", width = 3),
+                valueBoxOutput("kpi_alertas", width = 3),
+                valueBoxOutput("kpi_indeterminado", width = 3)
+              ),
+              fluidRow(
+                box(title = "Resumen General", width = 12, solidHeader = TRUE, status = "primary",
+                    "Aquí puedes poner un gráfico general, por ejemplo evolución mensual de fraudes.")
+              )
+      ),
+      
+      # =======================
+      # 2. GRÁFICOS UNIVARIADOS
+      # =======================
+      tabItem(tabName = "univariados",
+              fluidRow(
+                box(title = "Histograma de Montos", width = 6, solidHeader = TRUE, status = "info",
+                    plotOutput("hist_montos")),
+                box(title = "Distribución por Comercio", width = 6, solidHeader = TRUE, status = "info",
+                    plotOutput("bar_comercios"))
+              )
+      ),
+      
+      # ===============================
+      # 3. GRÁFICOS BIVARIADOS/MULTI
+      # ===============================
+      tabItem(tabName = "bivariados",
+              fluidRow(
+                box(title = "Monto vs Tiempo", width = 6, solidHeader = TRUE, status = "warning",
+                    plotOutput("scatter_monto_tiempo")),
+                box(title = "Correlación entre variables", width = 6, solidHeader = TRUE, status = "warning",
+                    plotOutput("cor_matrix"))
+              )
+      ),
+      
+      # =======================
+      # 4. TABLAS DINÁMICAS
+      # =======================
+      tabItem(tabName = "tablas",
+              fluidRow(
+                box(title = "Tabla dinámica con pivottabler (HTML widget)", 
+                    width = 12, solidHeader = TRUE, status = "primary",
+                    uiOutput("tabla_pivot")
+                )
+              ),
+              fluidRow(
+                box(title = "Tabla dinámica convertida a DataFrame (DT)", 
+                    width = 12, solidHeader = TRUE, status = "success",
+                    DTOutput("tabla_pivot_df")
+                )
+              )
+      )
+    )
+  )
+)
+
+# ----------------------------
+# SERVER
+# ----------------------------
+server <- function(input, output) {
+  
+  # Simulamos dataset de ejemplo (reemplaza con tus datos de fraude reales)
+  set.seed(123)
+  Data <- data.frame(
+    monto = rnorm(500, mean = 100, sd = 50),
+    comercio = sample(c("A", "B", "C", "D"), 500, replace = TRUE),
+    tiempo = sample(1:12, 500, replace = TRUE),
+    fraude = sample(c("Fraude", "Bueno", "Indeterminado", "Alerta"), 500, replace = TRUE)
+  )
+  
+  # =======================
+  # 1. RESUMEN DE KPIs
+  # =======================
+  output$kpi_fraude <- renderValueBox({
+    valueBox(sum(Data$fraude == "Fraude"), "Casos de Fraude",
+             icon = icon("skull-crossbones"), color = "red")
+  })
+  output$kpi_buenas <- renderValueBox({
+    valueBox(sum(Data$fraude == "Bueno"), "Casos Buenos",
+             icon = icon("thumbs-up"), color = "green")
+  })
+  output$kpi_alertas <- renderValueBox({
+    valueBox(sum(Data$fraude == "Alerta"), "Alertas Detectadas",
+             icon = icon("exclamation-triangle"), color = "yellow")
+  })
+  output$kpi_indeterminado <- renderValueBox({
+    valueBox(sum(Data$fraude == "Indeterminado"), "Casos Indeterminados",
+             icon = icon("question"), color = "blue")
+  })
+  
+  # =======================
+  # 2. GRÁFICOS UNIVARIADOS
+  # =======================
+  output$hist_montos <- renderPlot({
+    ggplot(Data, aes(x = monto)) +
+      geom_histogram(fill = "steelblue", bins = 30) +
+      theme_minimal() +
+      labs(title = "Distribución de Montos")
+  })
+  output$bar_comercios <- renderPlot({
+    ggplot(Data, aes(x = comercio)) +
+      geom_bar(fill = "orange") +
+      theme_minimal() +
+      labs(title = "Transacciones por Comercio")
+  })
+  
+  # ===============================
+  # 3. GRÁFICOS BIVARIADOS/MULTI
+  # ===============================
+  output$scatter_monto_tiempo <- renderPlot({
+    ggplot(Data, aes(x = tiempo, y = monto, color = fraude)) +
+      geom_point(alpha = 0.6) +
+      theme_minimal() +
+      labs(title = "Monto vs Tiempo por Tipo de Caso")
+  })
+  output$cor_matrix <- renderPlot({
+    num_data <- Data[, sapply(Data, is.numeric)]
+    corr <- cor(num_data)
+    library(reshape2)
+    ggplot(melt(corr), aes(Var1, Var2, fill = value)) +
+      geom_tile() +
+      scale_fill_gradient2(low = "blue", high = "red", mid = "white") +
+      theme_minimal() +
+      labs(title = "Matriz de Correlación")
+  })
+  
+  # =======================
+  # 4. TABLAS DINÁMICAS
+  # =======================
+  
+  # Opción 1: Mostrar pivottabler en HTML
+  output$tabla_pivot <- renderUI({
+    pt <- PivotTable$new()
+    pt$addData(Data)
+    pt$addColumnDataGroups("fraude")
+    pt$addRowDataGroups("comercio")
+    pt$defineCalculation(calculationName="Monto promedio", 
+                         summariseExpression="mean(monto, na.rm=TRUE)")
+    pt$renderPivot()
+  })
+  
+  # Opción 2: Convertir a DataFrame y usar DT
+  output$tabla_pivot_df <- DT::renderDT({
+    pt <- PivotTable$new()
+    pt$addData(Data)
+    pt$addColumnDataGroups("fraude")
+    pt$addRowDataGroups("comercio")
+    pt$defineCalculation(calculationName="Monto promedio", 
+                         summariseExpression="mean(monto, na.rm=TRUE)")
+    pt$evaluatePivot()
+    df <- pt$asDataFrame()
+    datatable(df, options = list(pageLength = 10, scrollX = TRUE))
+  })
+}
+
+# ----------------------------
+# Lanzar la app
+# ----------------------------
+shinyApp(ui, server)
