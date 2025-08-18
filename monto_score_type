@@ -1,0 +1,42 @@
+# Asegúrate de tener instalado y cargado el paquete tidyverse
+# install.packages("tidyverse")
+library(tidyverse)
+
+# --- Preparación de datos (Ejemplo) ---
+# Voy a asumir que tu dataframe se llama 'data'.
+# Es buena práctica filtrar montos muy extremos que puedan distorsionar el gráfico.
+# También, para el análisis visual, un logaritmo en el monto ayuda a ver mejor los valores bajos.
+data_plot <- data %>%
+  filter(Purchase_Amount_(USD) > 0 & Purchase_Amount_(USD) < 5000) # Ajusta este rango según tus datos
+
+# --- Creación del Gráfico ---
+# Este gráfico muestra la interacción y la separa por el resultado (Fraude / Buena)
+
+interaction_plot <- ggplot(data_plot, aes(x = VCAS_Score, y = Purchase_Amount_(USD))) +
+  # Puntos de dispersión. El color se asigna según el Tipo de Autenticación.
+  # 'alpha' controla la transparencia para ver mejor la densidad de puntos.
+  geom_point(aes(color = Authentication_Type), alpha = 0.6, size = 2) +
+  
+  # SEPARACIÓN CLAVE: Creamos dos gráficos separados, uno para Fraude y otro para transacciones Buenas.
+  # Esto hace que los patrones sean increíblemente claros.
+  facet_wrap(~ Marked_As, scales = "free") +
+  
+  # ESCALA LOGARÍTMICA: ¡Muy importante para montos de transacción!
+  # Ayuda a que los montos pequeños no se queden todos aplastados en la parte de abajo del gráfico.
+  scale_y_log10() +
+  
+  # Títulos y etiquetas claras
+  labs(
+    title = "Interacción entre Score de Riesgo, Monto y Tipo de Autenticación",
+    subtitle = "Separado por transacciones Buenas vs. Fraudulentas",
+    x = "VCAS Risk Score",
+    y = "Monto de la Transacción (USD) - Escala Logarítmica",
+    color = "Tipo de Autenticación"
+  ) +
+  
+  # Tema visual limpio
+  theme_minimal() +
+  theme(legend.position = "bottom") # Mueve la leyenda abajo para más espacio
+
+# Para mostrar el gráfico
+print(interaction_plot)
