@@ -180,3 +180,27 @@ server <- function(input, output) {
 # Lanzar la app
 # ----------------------------
 shinyApp(ui, server)
+
+# Ejemplo de tabla dinámica en server ----
+tabla_resumen <- Data %>%
+  group_by(comercio, fraude) %>%
+  summarise(total_transacciones = n(),
+            monto_promedio = mean(monto, na.rm = TRUE)) %>%
+  ungroup()
+
+output$tabla_dinamica <- renderDT({
+  datatable(tabla_resumen, options = list(pageLength = 10, scrollX = TRUE))
+})
+
+
+tabla_dinamica_reactiva <- reactive({
+  Data %>%
+    group_by(comercio, fraude) %>%
+    summarise(total_transacciones = n(),
+              monto_promedio = mean(monto, na.rm = TRUE)) %>%
+    ungroup()
+})
+
+output$tabla_dinamica <- renderDT({
+  datatable(tabla_dinamica_reactiva(), options = list(pageLength = 10, scrollX = TRUE))
+})
