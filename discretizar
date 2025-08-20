@@ -1,0 +1,168 @@
+# Suponiendo que tienes un dataset llamado 'fraud_data' con las columnas:
+# - VCAs_score: variable numérica de score de fraude (e.g., de 0 a 100)
+# - fraud: variable target binaria (e.g., "Fraud" o "No Fraud")
+
+# Asegúrate de cargar las librerías necesarias
+library(ggplot2)
+library(rpart)
+library(rpart.plot)
+library(arules)
+library(dplyr)
+library(cowplot)
+library(plotly)  # Para ggplotly()
+
+#-----------------------#
+####  Discretización ####
+#-----------------------#
+
+# 1. Discretización usando Quantiles (Deciles) y la función cut() ----------
+#    Basada únicamente en la variable VCAs_score
+fraud_d1 <- fraud_data
+
+summary(fraud_d1$VCAs_score)
+
+# Generar deciles (10 bins basados en quantiles)
+deciles <- quantile(fraud_d1$VCAs_score, probs = seq(0, 1, by = 0.1))
+
+# Discretizar en deciles
+fraud_d1$vca_cat1 <- cut(fraud_d1$VCAs_score, 
+                         breaks = deciles,
+                         labels = paste("Decil", 1:10),
+                         include.lowest = TRUE,
+                         right = FALSE)  # [   >
+
+table(fraud_d1$vca_cat1)  
+
+ggplot(fraud_d1) + aes(vca_cat1) + 
+  geom_bar(color = "black", fill = "darkgreen") + 
+  theme_light() + 
+  labs(title = "Gráfico de Barras de VCAs Score por Deciles", 
+       x = "Deciles de VCAs Score", 
+       y = "Frecuencia") 
+
+# Verificando con un gráfico de barras apilado (Stacked) para ver concentración de fraude
+ggplot(fraud_d1) + aes(x = vca_cat1, fill = fraud) +
+  geom_bar(position = position_fill()) +
+  theme_bw() +
+  labs(title = "Fraude según Deciles de VCAs Score",
+       subtitle = "Usando quantiles (deciles)",
+       x = "Deciles de VCAs Score", 
+       y = "Proporción") + 
+  scale_fill_manual(values = c("darkolivegreen3", "firebrick2")) +
+  theme(legend.position = "bottom") -> g1 ; g1
+
+ggplotly(g1)
+
+# Calcular proporciones para identificar bins con alta concentración de fraude
+prop.table(table(fraud_d1$vca_cat1, fraud_d1$fraud), margin = 1)
+
+# 2. Discretización usando árboles de clasificación -----------
+#    y la función cut(), árbol CART
+#    Basada en VCAs_score y el target 'fraud'
+fraud_d2 <- fraud_data
+
+set.seed(123)
+
+arbol <- rpart(fraud ~ VCAs_score, # Target ~ V. a discretizar
+               data = fraud_d2,
+               method = "class",
+               control = rpart.control(cp = 0, minbucket = 0))
+
+rpart.plot(arbol, digits = -1, type = 2, extra = 101,
+           varlen = 3, cex = 0.6, nn = TRUE)
+
+arbol$splits
+
+# Basado en los splits del árbol, define breaks manualmente
+# Ejemplo hipotético: suponiendo splits en 50 y 80 (ajusta según el árbol real)
+breaks_cart <- c(-Inf, 50, 80, Inf)
+labels_cart <- c("Bajo (0-50)", "Medio (50-80)", "Alto (80+)")
+
+fraud_d2$vca_cat2 <- cut(fraud_d2$VCAs_score, 
+                         breaks = breaks_cart,
+                         labels = labels_cart,
+                         right = FALSE)
+
+table(fraud_d2$vca_cat2)  
+prop.table(table(fraud_d2$vca_cat2, fraud_d2$fraud), margin = 1)
+
+ggplot(fraud_d2) + aes(vca_cat2) + 
+  geom_bar(color = "black", fill = "orange") + 
+  theme_light() + 
+  labs(title = "Gráfico de Barras de VCAs Score por CART", 
+       x = "Bins de VCAs Score (CART)", 
+       y = "Frecuencia") 
+
+# Verificando con un gráfico de barras apilado
+ggplot(fraud_d2) + aes(x = vca_cat2, fill = fraud) +
+  geom_bar(position = position_fill()) +
+  theme_bw() +
+  labs(title = "Fraude según Bins de VCAs Score",
+       subtitle = "Usando árbol CART",
+       x = "Bins de VCAs Score", 
+       y = "Proporción") + 
+  scale_fill_manual(values = c("darkolivegreen3", "firebrick2")) +
+  theme(legend.position = "bottom") -> g2 ; g2
+
+ggplotly(g2)
+
+# 3. Discretización usando clusters y la función discretize() ----
+#    Basado en un cluster de partición k-means
+fraud_d3 <- fraud_data
+
+summary(fraud_d3$VCAs_score)
+
+set.seed(2022)
+fraud_d3$vca_cat3 <- discretize(fraud_d3$VCAs_score, 
+                                method = "cluster", 
+                                breaks = 3)  # Puedes ajustar el número de breaks/clusters
+
+table(fraud_d3$vca_cat3)  
+
+# Verificando con un cluster k-means directo
+set.seed(2022)
+km <- kmeans(fraud_d3$VCAs_score, 
+             centers = 3,     # Número de clusters
+             iter.max = 10,   
+             nstart = 1,      
+             algorithm = "Lloyd")    
+
+table(km$cluster)
+
+data_km <- data.frame(original = fraud_d3$VCAs_score, 
+                      discretizada = fraud_d3$vca_cat3,
+                      cluster = factor(km$cluster))
+
+data_km %>% group_by(cluster) %>%
+  summarise(numero = n(),
+            min = min(original),
+            max = max(original))
+
+table(data_km$discretizada, data_km$cluster)
+
+ggplot(fraud_d3) + aes(vca_cat3) + 
+  geom_bar(color = "black", fill = "darkgreen") + 
+  theme_light() + 
+  labs(title = "Gráfico de Barras de VCAs Score por Clusters", 
+       x = "Clusters de VCAs Score", 
+       y = "Frecuencia") 
+
+# Verificando con un gráfico de barras apilado (Stacked)
+ggplot(fraud_d3) + aes(x = vca_cat3, fill = fraud) +
+  geom_bar(position = position_fill()) +
+  theme_bw() +
+  labs(title = "Fraude según Clusters de VCAs Score",
+       subtitle = "Usando cluster k-means",
+       x = "Clusters de VCAs Score", 
+       y = "Proporción") + 
+  scale_fill_manual(values = c("darkolivegreen3", "firebrick2")) +
+  theme(legend.position = "bottom") -> g3 ; g3
+
+ggplotly(g3)
+
+# Combinar gráficos para comparación
+plot_grid(g1, g2, g3)
+
+# Análisis adicional: Para encontrar bins óptimos, evalúa las proporciones de fraude en cada bin
+# y selecciona aquellos con alta proporción de fraude pero bajo volumen total de transacciones
+# (para minimizar impacto en el negocio). Ajusta breaks según resultados.
