@@ -1,0 +1,241 @@
+# Suponiendo que tienes un dataset llamado 'fraud_data' con las columnas:
+# - VCAS_score: variable numérica de score (e.g., de 0 a 100 o más)
+# - authentication_type: tipo de autenticación (e.g., "Risk Based")
+# - authentication_status: estatus (e.g., "MC", "N")
+# - marked_as: target categórico con 4 categorías posibles: "Fraud", "Good", "(en blanco)", "Indeterminado"
+# - tarjeta: número de tarjeta (para conteo único de tarjetas)
+# - monto: monto de la transacción en $
+# Cada fila representa una transacción.
+
+# El código se adapta para:
+# - Filtrar por authentication_type == "Risk Based" (como en el análisis de la analista senior).
+# - Discretizar VCAS_score en rangos fijos similares a los de la imagen (15-19, 20-24, etc., ajusta según tu data).
+# - Calcular resúmenes: #Tarjetas (n_distinct(tarjeta)), #Trxs (n()), Monto (sum(monto)).
+# - Calcular porcentaje de fraude (trxs marcadas como "Fraud" / total trxs en Risk Based).
+# - Analizar concentración de fraude en bins altos (e.g., >=30).
+# - Calcular impacto potencial (e.g., % de trxs afectadas si se solicita OTP en ciertos bins).
+# - Usar múltiples métodos de discretización (quantiles/deciles, CART, clusters).
+# - Visualizaciones con fill = marked_as (múltiples categorías).
+
+# Cargar librerías necesarias
+library(ggplot2)
+library(rpart)
+library(rpart.plot)
+library(arules)
+library(dplyr)
+library(cowplot)
+library(plotly)
+library(tidyr)  # Para pivot si es necesario
+
+# Filtrar el dataset para authentication_type == "Risk Based" (como en el análisis)
+fraud_data_rb <- fraud_data %>% filter(authentication_type == "Risk Based")
+
+# Calcular porcentaje de fraude general (como el 16% en la imagen)
+fraud_summary <- fraud_data_rb %>%
+  group_by(marked_as) %>%
+  summarise(n_trxs = n(),
+            monto = sum(monto)) %>%
+  mutate(porc_trxs = n_trxs / sum(n_trxs) * 100)
+
+# Mostrar resumen general (similar a la primera tabla)
+general_table <- fraud_data_rb %>%
+  group_by(authentication_status, marked_as) %>%
+  summarise(n_tarjetas = n_distinct(tarjeta),
+            n_trxs = n(),
+            monto = sum(monto)) %>%
+  ungroup() %>%
+  bind_rows(., summarise(., across(c(n_tarjetas, n_trxs, monto), sum), authentication_status = "Total", marked_as = ""))
+
+print(general_table)
+print(paste("Porcentaje de fraude en Risk Based:", round(fraud_summary$porc_trxs[fraud_summary$marked_as == "Fraud"], 1), "%"))
+
+#-----------------------#
+#### Discretización ####
+#-----------------------#
+
+# 1. Discretización usando rangos fijos (como en la imagen: 15-19, 20-24, etc.) y cut() ----------
+#    Basada en rangos observados, ajusta breaks según tu data (asumiendo VCAS_score >=15)
+fraud_d1 <- fraud_data_rb  # Usamos solo Risk Based
+
+# Definir breaks fijos basados en la imagen (agrega más si tu data tiene rangos superiores)
+breaks_fixed <- c(15, 20, 25, 30, 35, 40, 45, 50, 65, 70, Inf)
+labels_fixed <- c("15-19", "20-24", "25-29", "30-34", "35-39", "40-44", "45-49", "50-64", "65-69", "70+")
+
+fraud_d1$vca_bin <- cut(fraud_d1$VCAS_score, 
+                        breaks = breaks_fixed,
+                        labels = labels_fixed,
+                        include.lowest = TRUE,
+                        right = FALSE)
+
+# Tabla resumen por bin, status, marked_as (similar a la segunda tabla)
+bin_table <- fraud_d1 %>%
+  group_by(vca_bin, authentication_status, marked_as) %>%
+  summarise(n_tarjetas = n_distinct(tarjeta),
+            n_trxs = n(),
+            monto = sum(monto),
+            .groups = 'drop') %>%
+  filter(!is.na(vca_bin))  # Eliminar NA si hay
+
+print(bin_table)
+
+# Total general por marked_as
+total_general <- bin_table %>%
+  group_by(marked_as) %>%
+  summarise(n_tarjetas = sum(n_tarjetas),
+            n_trxs = sum(n_trxs),
+            monto = sum(monto))
+
+print(total_general)
+
+# Gráfico de barras para frecuencia por bin
+ggplot(fraud_d1) + aes(vca_bin) + 
+  geom_bar(color = "black", fill = "darkgreen") + 
+  theme_light() + 
+  labs(title = "Frecuencia de Transacciones por Rango de VCAS Score", 
+       x = "Rangos de VCAS Score", 
+       y = "Número de Transacciones")
+
+# Gráfico de barras apilado para proporción de marked_as por bin
+ggplot(fraud_d1) + aes(x = vca_bin, fill = marked_as) +
+  geom_bar(position = position_fill()) +
+  theme_bw() +
+  labs(title = "Distribución de Marked As por Rango de VCAS Score",
+       subtitle = "En autenticaciones Risk Based",
+       x = "Rangos de VCAS Score", 
+       y = "Proporción") + 
+  scale_fill_manual(values = c("Fraud" = "firebrick2", "Good" = "darkolivegreen3", 
+                               "(en blanco)" = "gray", "Indeterminado" = "dodgerblue")) +  # Ajusta colores y categorías
+  theme(legend.position = "bottom") -> g1 ; g1
+
+ggplotly(g1)
+
+# Proporciones por bin
+prop.table(table(fraud_d1$vca_bin, fraud_d1$marked_as), margin = 1)
+
+# Análisis de concentración: Fraude en scores >=30 (como en la imagen)
+fraud_conc <- fraud_d1 %>%
+  mutate(high_score = ifelse(VCAS_score >= 30, ">=30", "<30")) %>%
+  group_by(high_score, marked_as) %>%
+  summarise(n_trxs = n()) %>%
+  pivot_wider(names_from = marked_as, values_from = n_trxs, values_fill = 0)
+
+print(fraud_conc)
+
+# 2. Calcular impacto potencial de reglas (e.g., solicitud de OTP para bins altos)
+#    Ejemplo: % de trxs afectadas y % de fraude capturado si intervenimos en bins >=30
+total_trxs <- nrow(fraud_d1)
+total_fraud_trxs <- sum(fraud_d1$marked_as == "Fraud")
+
+affected_trxs <- fraud_d1 %>% filter(VCAS_score >= 30) %>% nrow()
+captured_fraud <- fraud_d1 %>% filter(VCAS_score >= 30 & marked_as == "Fraud") %>% nrow()
+
+impact_otp <- (affected_trxs / total_trxs) * 100
+fraud_captured_perc <- (captured_fraud / total_fraud_trxs) * 100
+
+print(paste("Impacto por solicitud de OTP en scores >=30: ", round(impact_otp, 1), "% de trxs afectadas"))
+print(paste("Fraude capturado: ", round(fraud_captured_perc, 1), "%"))
+
+# Análisis acumulativo para encontrar bins óptimos (ordenar bins por score descendente)
+cumulative_analysis <- bin_table %>%
+  filter(marked_as == "Fraud") %>%
+  mutate(bin_order = as.numeric(factor(vca_bin, levels = rev(labels_fixed)))) %>%  # Orden descendente
+  arrange(desc(bin_order)) %>%
+  mutate(cum_trxs_affected = cumsum(n_trxs),
+         cum_fraud_captured = cumsum(n_trxs),
+         perc_affected = cum_trxs_affected / total_trxs * 100,
+         perc_captured = cum_fraud_captured / total_fraud_trxs * 100)
+
+print(cumulative_analysis)  # Usa esto para decidir cutoffs que maximicen captured con mínimo affected
+
+# 3. Discretización usando árboles de clasificación (CART) -----------
+fraud_d2 <- fraud_data_rb
+
+set.seed(123)
+
+arbol <- rpart(marked_as ~ VCAS_score,  # Multi-class
+               data = fraud_d2,
+               method = "class",
+               control = rpart.control(cp = 0, minbucket = 0))
+
+rpart.plot(arbol, digits = -1, type = 2, extra = 101,
+           varlen = 3, cex = 0.6, nn = TRUE)
+
+arbol$splits  # Usa estos splits para definir breaks_cart manualmente
+
+# Ejemplo hipotético basado en splits (ajusta con arbol$splits)
+breaks_cart <- c(15, 30, 45, Inf)  # Ej: cuts en 30 y 45
+labels_cart <- c("15-29", "30-44", "45+")
+
+fraud_d2$vca_bin_cart <- cut(fraud_d2$VCAS_score, 
+                             breaks = breaks_cart,
+                             labels = labels_cart,
+                             right = FALSE)
+
+# Resumen similar
+bin_table_cart <- fraud_d2 %>%
+  group_by(vca_bin_cart, authentication_status, marked_as) %>%
+  summarise(n_tarjetas = n_distinct(tarjeta),
+            n_trxs = n(),
+            monto = sum(monto),
+            .groups = 'drop')
+
+print(bin_table_cart)
+
+# Gráfico apilado
+ggplot(fraud_d2) + aes(x = vca_bin_cart, fill = marked_as) +
+  geom_bar(position = position_fill()) +
+  theme_bw() +
+  labs(title = "Distribución de Marked As por Bin CART",
+       subtitle = "Usando árbol CART",
+       x = "Bins de VCAS Score", 
+       y = "Proporción") + 
+  scale_fill_manual(values = c("Fraud" = "firebrick2", "Good" = "darkolivegreen3", 
+                               "(en blanco)" = "gray", "Indeterminado" = "dodgerblue")) +
+  theme(legend.position = "bottom") -> g2 ; g2
+
+ggplotly(g2)
+
+# 4. Discretización usando clusters (k-means) -----------
+fraud_d3 <- fraud_data_rb
+
+set.seed(2022)
+fraud_d3$vca_bin_cluster <- discretize(fraud_d3$VCAS_score, 
+                                       method = "cluster", 
+                                       breaks = 4)  # 4 clusters para más granularidad
+
+# Resumen
+bin_table_cluster <- fraud_d3 %>%
+  group_by(vca_bin_cluster, authentication_status, marked_as) %>%
+  summarise(n_tarjetas = n_distinct(tarjeta),
+            n_trxs = n(),
+            monto = sum(monto),
+            .groups = 'drop')
+
+print(bin_table_cluster)
+
+# Verificar clusters
+km <- kmeans(fraud_d3$VCAS_score, centers = 4, iter.max = 10, nstart = 1, algorithm = "Lloyd")
+table(km$cluster)
+
+# Gráfico apilado
+ggplot(fraud_d3) + aes(x = vca_bin_cluster, fill = marked_as) +
+  geom_bar(position = position_fill()) +
+  theme_bw() +
+  labs(title = "Distribución de Marked As por Cluster",
+       subtitle = "Usando k-means",
+       x = "Clusters de VCAS Score", 
+       y = "Proporción") + 
+  scale_fill_manual(values = c("Fraud" = "firebrick2", "Good" = "darkolivegreen3", 
+                               "(en blanco)" = "gray", "Indeterminado" = "dodgerblue")) +
+  theme(legend.position = "bottom") -> g3 ; g3
+
+ggplotly(g3)
+
+# Combinar gráficos para comparación
+plot_grid(g1, g2, g3)
+
+# Notas finales:
+# - Ajusta 'breaks_fixed' y etiquetas según la distribución real de VCAS_score en tu data.
+# - Si 'marked_as' tiene exactamente las categorías de la imagen ("Fraud", "(en blanco)", "Good"), elimina "Indeterminado" de los colores.
+# - Usa el análisis acumulativo para identificar bins óptimos: busca donde % captured es alto y % affected es bajo.
+# - Para calcular impacto de OTP, asume que OTP se solicita en bins altos; ajusta el cutoff (e.g., >=30) según tus necesidades.
