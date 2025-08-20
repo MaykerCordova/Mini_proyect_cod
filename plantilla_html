@@ -1,0 +1,16 @@
+---
+title: "Fuzzy K-Nearest Neighbor (FKNN)"
+author:
+- "Córdova Pintado, Jose Mayker  20210832@lamolina.edu.pe"
+- "Castro Fernandez, Jhordy      20210830@lamolina.edu.pe"
+- "Gomez Puma, Emilly            20200322@lamolina.edu.pe"
+- "Tesén Cornetero, Miguel Angel 20210850@lamolina.edu.pe"
+- "Poma Gómez, Diego Alonso      20200330@lamolina.edu.pe"
+date: "`r Sys.Date()`"
+output:
+  rmdformats::downcute:
+    theme: darkly
+    highlight: tango
+    toc_depth: 3
+    number_sections: true
+    code_folding: hide
