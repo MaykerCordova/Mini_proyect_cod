@@ -1,0 +1,215 @@
+
+#-----------------------#
+####  Discretización ####
+#-----------------------#
+
+# 1. Discretización usando BoxPlot y la función cut() ----------
+#    Basada únicamente en la misma variable con outliers
+censusd1 <- censusn
+
+summary(censusd1$hours.per.week)
+
+library(ggplot2)
+ggplot(censusd1) + aes(x = " ", y = hours.per.week) + 
+  geom_boxplot(fill = "peru") +
+  scale_y_continuous(breaks = seq(0, 100, 5)) + 
+  labs(title = "Box Plot de horas de trabajo a la semana",
+       xlab = " ", ylab = "Horas de trabajo a la semana") +
+  theme_minimal()
+
+summary(censusd1$hours.per.week)
+
+quantile(censusd1$hours.per.week)
+
+# Menos de 40          [-Inf a 40>
+# De 40 a menos de 45  [40 a 45>
+# De 45 a más          [45 a Inf>
+
+# "[  ]"  "[  >"  "<  ]"
+
+censusd1$hpw_cat1 <- cut(censusd1$hours.per.week, 
+                         breaks = c(-Inf, 40, 45, Inf),
+                         labels = c("Menos de 40", 
+                                    "De 40 a menos de 45",
+                                    "De 45 a más"),
+                         right  = FALSE)  # [   >
+
+table(censusd1$hpw_cat1)  
+
+ggplot(censusd1) + aes(hpw_cat1) + 
+  geom_bar(color = "black", fill = "darkgreen") + 
+  theme_light() + 
+  labs(title = "Gráfico de Barras", 
+       x = "Horas de trabajo a la semana", 
+       y = "Frecuencia") 
+
+# Verificando con un gráfico de barras apilado (Stacked)
+ggplot(censusd1) + aes(x = hpw_cat1, fill = salary) +
+  geom_bar(position = position_fill()) +
+  theme_bw() +
+  labs(title ="Salario según las horas de trabajo a la semana",
+       subtitle = "Usando cuartiles",
+       x = "Horas de trabajo", 
+       y = "Frecuencia") + 
+  scale_fill_manual(values = c("darkolivegreen3", "firebrick2")) +
+  theme(legend.position = "bottom") -> g1 ; g1
+ggplotly()
+
+
+# 2. Discretización usando árboles de clasificación -----------
+#    y la función cut(), árbol CART
+#   Basada en la misma variable con outliers y el target
+censusd2 <- censusn
+
+library(rpart)
+set.seed(123)
+
+arbol <- rpart(salary ~ hours.per.week, # Target ~ V. a discretizar
+               data = censusd2,
+               method = "class",  # anova en caso de Regresión
+               control = rpart.control(cp = 0, minbucket = 0)
+              )
+
+p_load(rpart.plot)
+rpart.plot(arbol, digits = -1, type = 2, extra = 101,
+           varlen = 3, cex = 0.6, nn = TRUE)
+
+arbol$splits
+
+# Opción 1
+# Menos de 41.5 [-Inf a 41.5>
+# De 41.5 a más [ 41.5 a Inf>
+
+# Opción 2
+# Menos de 41.5         [-Inf a 41.5>
+# De 41.5 a menos 49.5  [ 41.5 a 49.5>
+# De 49.5 a más         [ 49.5 a Inf>
+
+# Opción 1 
+censusd2$hpw_cat2 <- cut(censusd2$hours.per.week, 
+                         breaks = c(-Inf, 41.5, Inf),
+                         labels = c("Menos de 41.5",
+                                    "De 41.5 a más"),
+                         right  = FALSE)
+
+table(censusd2$hpw_cat2)  
+prop.table(table(censusd2$hpw_cat2, censusd2$salary), margin = 1)
+
+ggplot(censusd2) + aes(hpw_cat2) + 
+  geom_bar(color = "black", fill = "orange") + 
+  theme_light() + 
+  labs(title = "Gráfico de Barras", 
+       x = "Horas de trabajo a la semana", 
+       y = "Frecuencia") 
+
+# Verificando con un gráfico de barras apilado
+ggplot(censusd2) + aes(x = hpw_cat2, fill = salary) +
+  geom_bar(position = position_fill()) +
+  theme_bw() +
+  labs(title = "Salario según las horas de trabajo a la semana",
+       x = "Horas de trabajo", 
+       y = "Frecuencia") + 
+  scale_fill_manual(values = c("darkolivegreen3", "firebrick2")) +
+  theme(legend.position = "bottom") 
+
+ggplotly()
+
+# Opción 2
+# Menos de 41.5         [-Inf a 41.5>
+# De 41.5 a menos 49.5  [ 41.5 a 49.5>
+# De 49.5 a más         [ 49.5 a Inf>
+
+censusd2$hpw_cat3 <- cut(censusd2$hours.per.week, 
+                         breaks = c(-Inf, 41.5, 49.5, Inf),
+                         labels = c("Menos de 41.5",
+                                    "De 41.5 a menos de 49.5",
+                                    "De 49.5 a más"),
+                         right  = FALSE)
+
+table(censusd2$hpw_cat3)  
+prop.table(table(censusd2$hpw_cat3, censusd2$salary), margin = 1)
+
+ggplot(censusd2) + aes(hpw_cat3) + 
+  geom_bar(color = "black", fill = "orange") + 
+  theme_light() + 
+  labs(title ="Gráfico de Barras", 
+       x = "Horas de trabajo a la semana", 
+       y = "Frecuencia") 
+
+# Verificando con un gráfico de barras apilado
+ggplot(censusd2) + aes(x = hpw_cat3, fill = salary) +
+  geom_bar(position = position_fill()) +
+  theme_bw() +
+  labs(title = "Salario según las horas de trabajo a la semana",
+       subtitle = "Usando árbol CART",
+       x = "Horas de trabajo", 
+       y = "Frecuencia") + 
+  scale_fill_manual(values = c("darkolivegreen3", "firebrick2")) +
+  theme(legend.position = "bottom") -> g2 ; g2
+
+ggplotly()
+
+# 3. Discretización usando clusters y la función discretize() ----
+#    Basado en un cluster de partición k-means
+censusd3 <- censusn
+
+summary(censusd3$hours.per.week)
+
+library(arules)
+set.seed(2022)
+censusd3$hpw_cat3 <- discretize(censusd3$hours.per.week, 
+                                method = "cluster", 
+                                breaks = 3)
+
+# method: discretization method. Available are: 
+# - "interval" (equal interval width), 
+# - "frequency" (equal frequency), 
+# - "cluster" (k-means clustering) and 
+# - "fixed" (categories specifies interval boundaries). 
+
+table(censusd3$hpw_cat3)  
+
+# Verificando con un cluster con k-means
+set.seed(2022)
+km  <- kmeans(censusd3$hours.per.week, 
+              centers = 3,     # Número de Cluster
+              iter.max = 10,   # Número de iteraciones máxima
+              nstart = 1,      # Número de puntos iniciales
+              algorithm = "Lloyd")    
+
+table(km$cluster)
+
+data <- data.frame(original = censusd3$hours.per.week, 
+                   discretizada = censusd3$hpw_cat3,
+                   cluster = factor(km$cluster))
+
+library(dplyr)
+data  %>%   group_by(cluster) %>%
+  summarise(numero = n(),
+            min = min(original),
+            max = max(original))
+
+table(data$discretizada,data$cluster)
+
+
+ggplot(censusd3) + aes(hpw_cat3) + 
+  geom_bar(color = "black", fill = "darkgreen") + 
+  theme_light() + 
+  labs(title = "Gráfico de Barras", 
+       x = "Horas de trabajo a la semana", 
+       y = "Frecuencia") 
+
+# Verificando con un gráfico de barras apilado (Stacked)
+ggplot(censusd3) + aes(x = hpw_cat3, fill = salary) +
+  geom_bar(position = position_fill()) +
+  theme_bw() +
+  labs(title ="Salario según las horas de trabajo a la semana",
+       subtitle = "Usando cluster k-means",
+       x = "Horas de trabajo", 
+       y = "Frecuencia") + 
+  scale_fill_manual(values = c("darkolivegreen3", "firebrick2")) +
+  theme(legend.position = "bottom") -> g3 ; g3
+
+library(cowplot)
+plot_grid(g1, g2, g3)
+
