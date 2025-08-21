@@ -1,0 +1,6 @@
+library(odbc)
+conn <- dbConnect(odbc::odbc(), 
+                  .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)};DBQ=C:/Carga Masiva/Monitor Plus - Transacciones.accdb")
+data <- dbGetQuery(conn, "SELECT * FROM Transacciones")
+dbDisconnect(conn)
+print(data)
