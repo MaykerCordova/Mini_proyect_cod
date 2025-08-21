@@ -1,0 +1,17 @@
+# Instala el paquete si no lo tienes
+# install.packages("RODBC")
+
+# Carga el paquete
+library(RODBC)
+
+# Establece la conexión (ajusta la ruta del archivo)
+conn <- odbcConnectAccess("C:/Carga Masiva/Monitor Plus - Transacciones.accdb")
+
+# Lee todos los datos de la tabla "Transacciones" (ajusta el nombre de la tabla si es diferente)
+data <- sqlQuery(conn, "SELECT * FROM Transacciones")
+
+# Cierra la conexión
+odbcClose(conn)
+
+# Ver los datos
+print(data)
