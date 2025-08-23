@@ -1,0 +1,51 @@
+# Instala si no lo tienes (descomenta)
+# install.packages(c("stringr", "stringdist", "dbscan"))
+
+library(data.table)
+library(stringr)
+library(stringdist)
+library(dbscan)
+library(dplyr)
+
+# Asume dt es tu data.table con la columna ESTABLECIMIENTO
+# Normalización con stringr
+dt[, EST_NORMALIZADO := str_to_lower(ESTABLECIMIENTO)]
+dt[, EST_NORMALIZADO := str_remove_all(EST_NORMALIZADO, "[0-9*+\\.@#$&_:|-]|www|\\.com|\\.ga|\\.pe|\\.au|\\.fra|\\.on")]
+dt[, EST_NORMALIZADO := str_squish(str_replace_all(EST_NORMALIZADO, "\\s+", " "))]
+
+# Extrae únicos de la versión normalizada
+unique_est_norm <- unique(dt$EST_NORMALIZADO)
+original_map <- dt[, .(EST_NORMALIZADO, ESTABLECIMIENTO)]
+
+# Calcula matriz de distancias
+dist_mat <- stringdistmatrix(unique_est_norm, unique_est_norm, method = "jw")
+
+# Convierte a matriz simétrica para HDBSCAN
+dist_matrix <- as.matrix(dist_mat)
+diag(dist_matrix) <- 0  # Diagonal a 0
+
+# Aplica HDBSCAN (ajusta minPts para densidad mínima)
+hdbscan_result <- hdbscan(dist_matrix, minPts = 2)
+
+# Extrae clusters (0 = ruido)
+clusters <- hdbscan_result$cluster
+
+# Crea dataframe con resultados
+clustered_norm <- data.frame(
+  EST_NORMALIZADO = unique_est_norm,
+  Cluster = clusters
+)
+
+# Une de vuelta a dt
+dt_clustered <- dt %>%
+  left_join(clustered_norm, by = "EST_NORMALIZADO")
+
+# Resume: muestra originales únicos por cluster
+dt_clustered %>%
+  group_by(Cluster) %>%
+  summarise(Establecimientos = paste(unique(ESTABLECIMIENTO), collapse = ", ")) %>%
+  print()
+
+# Filtra ruido (Cluster 0)
+dt_clustered[Cluster == 0, .(ESTABLECIMIENTO, EST_NORMALIZADO)]  # Ruido
+dt_clustered[Cluster > 0, .(ESTABLECIMIENTO, EST_NORMALIZADO)]  # Clusters válidos
