@@ -1,0 +1,66 @@
+# Instala si no lo tienes (descomenta)
+# install.packages(c("stringr", "stringdist", "factoextra"))
+
+library(data.table)
+library(stringr)
+library(stringdist)
+library(dplyr)
+library(factoextra)  # Para el gráfico de codo
+
+# Asume dt es tu data.table con la columna ESTABLECIMIENTO
+# Normalización con stringr: ignora case, números, especiales y dominios web
+dt[, EST_NORMALIZADO := str_to_lower(ESTABLECIMIENTO)]
+dt[, EST_NORMALIZADO := str_remove_all(EST_NORMALIZADO, "[0-9*+\\.@#$&_:|-]|www|\\.com|\\.ga|\\.pe|\\.au|\\.fra|\\.on")]
+dt[, EST_NORMALIZADO := str_squish(str_replace_all(EST_NORMALIZADO, "\\s+", " "))]
+
+# Extrae únicos de la versión normalizada
+unique_est_norm <- unique(dt$EST_NORMALIZADO)
+original_map <- dt[, .(EST_NORMALIZADO, ESTABLECIMIENTO)]
+
+# Calcula matriz de distancias
+dist_mat <- stringdistmatrix(unique_est_norm, unique_est_norm, method = "jw")
+
+# Convierte a dist
+dist_obj <- as.dist(dist_mat)
+
+# Clustering jerárquico
+hc <- hclust(dist_obj, method = "complete")
+
+# Gráfico de codo para determinar el número óptimo de clusters
+# Calcula WSS para diferentes números de clusters (de 1 a 15, ajusta según necesidad)
+wss <- sapply(1:15, function(k) {
+  clusters <- cutree(hc, k)
+  sum(dist_mat[clusters == clusters[1]]^2) / 2  # Aproximación de WSS para distancias
+})
+
+# Grafica el codo
+plot(1:15, wss, type = "b", pch = 19, frame = FALSE, 
+     xlab = "Número de clusters (k)", ylab = "Suma de distancias dentro del cluster (WSS)",
+     main = "Gráfico de Codo para Clustering")
+abline(v = which(diff(wss) < mean(diff(wss))), col = "red", lty = 2)  # Línea aproximada del codo
+
+# (Opcional) Usa factoextra para un gráfico más profesional
+# fviz_nbclust(dist_obj, FUNcluster = hcut, method = "wss", k.max = 15)  # Descomenta si instalaste factoextra
+
+# Basado en el codo, elige k (ejemplo: supongamos k=5 según el gráfico)
+k_optimo <- 5  # Ajusta según el gráfico
+clusters <- cutree(hc, k = k_optimo)
+
+# Crea dataframe con normalizados únicos y clusters
+clustered_norm <- data.frame(
+  EST_NORMALIZADO = unique_est_norm,
+  Cluster = clusters
+)
+
+# Une de vuelta a dt
+dt_clustered <- dt %>%
+  left_join(clustered_norm, by = "EST_NORMALIZADO")
+
+# Resume: muestra originales únicos por cluster
+dt_clustered %>%
+  group_by(Cluster) %>%
+  summarise(Establecimientos = paste(unique(ESTABLECIMIENTO), collapse = ", ")) %>%
+  print()
+
+# O filtra un cluster
+dt_clustered[Cluster == 1, .(ESTABLECIMIENTO, EST_NORMALIZADO)]
