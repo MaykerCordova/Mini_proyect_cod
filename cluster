@@ -1,47 +1,52 @@
-# Instala el paquete si no lo tienes (descomenta la línea siguiente si es necesario)
-# install.packages("stringdist")
+# Instala si no lo tienes (descomenta)
+# install.packages(c("stringr", "stringdist"))
 
-# Carga las librerías necesarias
 library(data.table)
+library(stringr)
 library(stringdist)
-library(dplyr)
+library(dplyr)  # Para summarise, opcional
 
-# 1. Extrae los establecimientos únicos
-unique_est <- unique(dt$ESTABLECIMIENTO)
+# Asume dt es tu data.table con la columna ESTABLECIMIENTO
+# Normalización con stringr: ignora case, números, especiales y dominios web
+dt[, EST_NORMALIZADO := str_to_lower(ESTABLECIMIENTO)]  # A minúsculas
+dt[, EST_NORMALIZADO := str_remove_all(EST_NORMALIZADO, "[0-9*+.]|www|\\.com|\\.ga|\\.pe|\\.au|\\.fra|\\.on")]  # Quita números, *, +, puntos, dominios
+dt[, EST_NORMALIZADO := str_squish(str_replace_all(EST_NORMALIZADO, "\\s+", " "))]  # Limpia espacios múltiples y bordes
 
-# 2. Calcula la matriz de distancias usando stringdist
-# Método "lv" (Levenshtein) es bueno para errores tipográficos; prueba "jw" (Jaro-Winkler) para similitudes más suaves
-dist_mat <- stringdistmatrix(unique_est, method = "lv", useNames = TRUE)
+# Extrae únicos de la versión normalizada (para eficiencia)
+unique_est_norm <- unique(dt$EST_NORMALIZADO)
+original_map <- dt[, .(EST_NORMALIZADO, ESTABLECIMIENTO)]  # Mapa para recuperar originales
 
-# Convierte a objeto dist
+# Calcula matriz de distancias en normalizados (Jaro-Winkler para variaciones)
+dist_mat <- stringdistmatrix(unique_est_norm, unique_est_norm, method = "jw")
+
+# Convierte a dist
 dist_obj <- as.dist(dist_mat)
 
-# 3. Realiza clustering jerárquico (método 'ward.D2' o 'complete' funcionan bien)
-hc <- hclust(dist_obj, method = "ward.D2")
+# Clustering jerárquico
+hc <- hclust(dist_obj, method = "complete")  # O "ward.D2"
 
-# 4. Visualiza el dendrograma para decidir el número de clusters
-plot(hc, labels = unique_est, main = "Dendrograma de Establecimientos", cex = 0.6)
-rect.hclust(hc, k = 5)  # Sugiere 5 clusters (ajusta según el gráfico)
+# Visualiza dendrograma
+plot(hc, labels = unique_est_norm, main = "Dendrograma de Establecimientos Normalizados", cex = 0.6)
+rect.hclust(hc, k = 10)  # Ajusta k según veas
 
-# 5. Corta el árbol para obtener clusters
-# Usa k (número de clusters) o h (altura de corte); ajusta según el dendrograma
-clusters <- cutree(hc, k = 5)  # O cutree(hc, h = 10) para un corte por altura
+# Corta el árbol
+clusters <- cutree(hc, h = 0.3)  # Ajusta h (0.2-0.4 para grupos similares)
 
-# 6. Crea un dataframe con los únicos y sus clusters
-clustered_est <- data.frame(
-  ESTABLECIMIENTO = unique_est,
+# Crea dataframe con normalizados únicos y clusters
+clustered_norm <- data.frame(
+  EST_NORMALIZADO = unique_est_norm,
   Cluster = clusters
 )
 
-# 7. Une de vuelta a tu dt original
+# Une de vuelta a dt
 dt_clustered <- dt %>%
-  left_join(clustered_est, by = "ESTABLECIMIENTO")
+  left_join(clustered_norm, by = "EST_NORMALIZADO")
 
-# 8. Resume para ver los grupos
+# Resume: muestra originales únicos por cluster
 dt_clustered %>%
   group_by(Cluster) %>%
   summarise(Establecimientos = paste(unique(ESTABLECIMIENTO), collapse = ", ")) %>%
   print()
 
-# 9. O filtra un cluster específico (ejemplo: Cluster 1)
-dt_clustered[Cluster == 1, .(ESTABLECIMIENTO)]
+# O filtra un cluster
+dt_clustered[Cluster == 1, .(ESTABLECIMIENTO, EST_NORMALIZADO)]
