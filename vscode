@@ -1,0 +1,11 @@
+{
+    "tabnine.experimentalAutoImports": true,
+    "editor.autoClosingBrackets": "always",
+    "python.autoComplete.extraPaths": [],
+    "python.analysis.extraPaths": [],
+    "editor.suggestOnTriggerCharacters": true,
+    "python.languageServer": "Pylance",
+    "python.analysis.completeFunctionParens": true,
+    "RainbowBrackets.depreciation-notice": false
+      
+}
