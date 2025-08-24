@@ -1,0 +1,10 @@
+Resumen = 
+SUMMARIZE(
+    'Datos',
+    'Datos'[Authentication Type],
+    'Datos'[Authentication Status],
+    'Datos'[Marked As],
+    "numero_tarjetas", DISTINCTCOUNT('Datos'[PAN]),
+    "numero_transacciones", COUNTROWS('Datos'),
+    "monto_dolares", SUM('Datos'[Purchase Amount (USD)])
+)
