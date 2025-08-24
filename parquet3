@@ -1,0 +1,22 @@
+import pandas as pd
+import os
+
+# Directorio de entrada (TSV) y salida (Parquet)
+input_folder = "ruta/a/tu/carpeta/tsv"
+output_folder = "ruta/a/tu/carpeta/parquet"
+
+# Crear la carpeta de salida si no existe
+if not os.path.exists(output_folder):
+    os.makedirs(output_folder)
+
+# Recorrer todos los archivos .TSV en la carpeta
+for file_name in os.listdir(input_folder):
+    if file_name.endswith(".tsv"):
+        # Leer el archivo TSV
+        tsv_path = os.path.join(input_folder, file_name)
+        df = pd.read_csv(tsv_path, sep="\t", encoding="utf-8")
+
+        # Convertir a Parquet
+        parquet_file = os.path.join(output_folder, file_name.replace(".tsv", ".parquet"))
+        df.to_parquet(parquet_file, engine="pyarrow", index=False)
+        print(f"Convertido: {file_name} -> {parquet_file}")
