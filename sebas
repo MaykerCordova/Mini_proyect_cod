@@ -1,0 +1,10 @@
+%Filtrado_vs_RiskBased = 
+DIVIDE(
+    COUNTROWS(TXT_ANALIZADOS_parquet),  -- Numerador: Conteo con filtros actuales (respeta slicers de Score, Monto, y otros como Tipo de Marcado)
+    CALCULATE(
+        COUNTROWS(TXT_ANALIZADOS_parquet), 
+        TXT_ANALIZADOS_parquet[Authentication Type] = "Risk Based",  -- Filtra solo por "Risk Based" (ajusta el nombre de la columna si es diferente)
+        REMOVEFILTERS(TXT_ANALIZADOS_parquet[Score Riesgo], TXT_ANALIZADOS_parquet[Monto Transacción], TXT_ANALIZADOS_parquet[Tipo de Marcado])  -- Elimina filtros de Score, Monto y Marcado para evitar inconsistencias
+    ),
+    0  -- Valor por defecto si denominador es 0
+)
