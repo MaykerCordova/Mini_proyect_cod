@@ -1,0 +1,37 @@
+# 1. Definir los colores para que sea más fácil de leer
+colores_borde <- c("#FF5733", "#337BFF", "#33FF57")
+colores_relleno <- rgb(t(col2rgb(colores_borde)), alpha = 70, maxColorValue = 255)
+
+
+# 2. Crear el gráfico
+radarchart(
+  datos_grafico,
+  axistype = 1,
+  
+  # --- Opciones del polígono ---
+  pcol = colores_borde,      # Color de las líneas
+  pfcol = colores_relleno,   # Color del relleno (con transparencia)
+  plwd = 2,                  # Grosor de las líneas
+  
+  # --- Opciones de la malla ---
+  cglcol = "grey",           # Color de la malla
+  cglty = 1,                 # Tipo de línea de la malla
+  axislabcol = "grey",       # Color de las etiquetas de los ejes (0, 25, 50, 75, 100)
+  caxislabels = seq(0, 100, 25),
+  cglwd = 0.8,               # Grosor de la línea de la malla
+  
+  # --- Opciones de las etiquetas de las variables ---
+  vlcex = 0.9                # Tamaño de la fuente de las etiquetas (trx_alerta, etc.)
+)
+
+# 3. Añadir una leyenda
+legend(
+  x = "bottomright",
+  legend = rownames(datos_grafico)[-c(1, 2)], # Nombres de las reglas
+  bty = "n", # Sin caja alrededor de la leyenda
+  pch = 20,
+  col = colores_borde,
+  text.col = "black",
+  cex = 1,
+  pt.cex = 1.5
+)
