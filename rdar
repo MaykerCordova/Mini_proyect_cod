@@ -1,3 +1,56 @@
+## PASO 2
+
+# 1. Crea un dataframe con las reglas que quieres comparar.
+# Usaremos las 4 características numéricas principales.
+reglas_a_comparar <- data.frame(
+  row.names = c("Regla 849 (Ataque Rápido)", "Regla 702 (Media)", "Regla 737 (Compleja)"),
+  trx_alerta = c(4, 2, 8),
+  monto_acum = c(1000, 2000, 4000),
+  tiempo_minutos = c(15, 120, 1440), # Usamos el tiempo normalizado en minutos
+  cambio_de_hash_dias = c(0, 0, 7) # La regla 849 y 702 no tienen esta condición, así que es 0
+)
+
+# Muestra los datos iniciales
+print("Datos originales:")
+print(reglas_a_comparar)
+
+
+# 2. NORMALIZACIÓN: Este es el paso MÁS IMPORTANTE.
+# Como las escalas son muy diferentes (monto va a 4000, trx a 8),
+# debemos normalizar los datos a una escala común (ej. 0 a 100).
+# De lo contrario, la variable con el número más grande dominaría el gráfico.
+
+normalize <- function(x) {
+  return(((x - min(x)) / (max(x) - min(x))) * 100)
+}
+
+# Aplicamos la normalización a cada columna
+# (Si una columna tiene el mismo valor para todas las reglas, como 'cambio_de_hash' si solo comparamos 849 y 702,
+# la normalización puede dar error. Lo manejamos con un 'if' simple).
+reglas_norm <- as.data.frame(lapply(reglas_a_comparar, function(x) {
+  if (length(unique(x)) > 1) {
+    normalize(x)
+  } else {
+    rep(50, length(x)) # Si todos los valores son iguales, asignamos un valor medio
+  }
+}))
+
+# 3. Formato para la función radarchart:
+# La librería fmsb requiere que las primeras 2 filas del dataframe
+# sean el valor máximo y mínimo para cada eje.
+max_min <- data.frame(
+  trx_alerta = c(100, 0),
+  monto_acum = c(100, 0),
+  tiempo_minutos = c(100, 0),
+  cambio_de_hash_dias = c(100, 0)
+)
+
+# Unimos todo en el dataframe final para el gráfico
+datos_grafico <- rbind(max_min, reglas_norm)
+
+print("Datos listos para graficar (normalizados):")
+print(datos_grafico)
+## PASO 3
 # 1. Definir los colores para que sea más fácil de leer
 colores_borde <- c("#FF5733", "#337BFF", "#33FF57")
 colores_relleno <- rgb(t(col2rgb(colores_borde)), alpha = 70, maxColorValue = 255)
