@@ -1,0 +1,58 @@
+import matplotlib.pyplot as plt
+
+# Generar gráfico evolutivo
+plt.figure(figsize=(10, 5))
+plt.plot(df2["Fecha"], df2["Txns Faltantes"], label="Transacciones Faltantes", color="blue")
+plt.title("Evolución de Transacciones Faltantes")
+plt.xlabel("Fecha")
+plt.ylabel("Transacciones Faltantes")
+plt.legend()
+plt.grid(True)
+plt.xticks(rotation=45)  # Rotar etiquetas de fecha para mejor legibilidad
+plt.tight_layout()  # Ajustar el layout
+plt.savefig("evolucion_txs.png")  # Guardar gráfico como imagen
+plt.close()
+
+# Adjuntar el gráfico al correo (se agregará más adelante en la configuración del correo)
+
+
+
+# Configurar los detalles del correo
+mail.To = "roberto.palacios@scotiabank.com.pe"
+mail.CC = ""  # Agrega destinatarios en copia si es necesario
+mail.Subject = f"Informe Transacciones de Monitor al {df2.iloc[0]['Fecha']}"
+mail.HTMLBody = f"""
+<html>
+<head>
+<style>
+table {{ width: 50%; margin: auto; border-collapse: collapse; }}
+th, td {{ border: 1px solid black; padding: 8px; text-align: center; }}
+th {{ background-color: #F2F2F2; }}
+img {{ width: 100%; max-width: 600px; margin: auto; display: block; }}
+</style>
+</head>
+<body>
+<h3>Estimados,</h3>
+<div>
+<span>En base a las transacciones recibidas por UNIBANCA ({df2.iloc[0]["Txns SBP"]}) y las enviadas desde UNIBANCA ({df2.iloc[0]["Txns UBA"]}),</span><br>
+<span>se tiene una diferencia de <strong>{abs(df2.iloc[0]["Txns Faltantes"])}</strong> transacciones faltantes. Porcentaje de diferencia para esta fecha es {format(abs(df2.iloc[0]["% Diferencia"])/UMBRAL*100, '.2f')}%.</span>
+<span> {('Superando el umbral del ' + str(UMBRAL*100) + '%.' if abs(df2.iloc[0]["% Diferencia"]) > UMBRAL else 'No se superó el umbral del ' + str(UMBRAL*100) + '%.')}</span>
+</div>
+<br>
+<div>
+<img src="cid:evolucion_txs.png" alt="Evolución de Transacciones Faltantes">
+</div>
+<br>
+<span>Saludos,</span><br>
+<span>Mayer Córdoba</span>
+</div>
+</body>
+</html>
+"""
+
+# Adjuntar el gráfico al correo
+attachment = mail.Attachments.Add("evolucion_txs.png")
+attachment.PropertyAccessor.SetProperty("http://schemas.microsoft.com/mapi/proptag/0x3712001E", "evolucion_txs.png")
+
+# Enviar el correo
+mail.Send()
