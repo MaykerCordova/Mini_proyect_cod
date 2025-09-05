@@ -1,67 +1,23 @@
-# [11] (Tu celda actual)
-workbook.save(filename=ruta_compartido)
-
-# Forzar recalculación con xlwings (alternativa recomendada)
-import xlwings as xw
-wb = xw.Book(ruta_compartido)
-wb.api.Calculate()
-wb.save(ruta_compartido)
-wb.close()
-
-# Recargar el Excel con pandas
-import pandas as pd
-df_full = pd.read_excel(ruta_compartido, dtype={"Transacciones Faltantes": float, "% Diferencia": float, "Radio": float})
-
-# Limpieza opcional de valores nulos
-df_full["Transacciones Faltantes"] = df_full["Transacciones Faltantes"].fillna(df_full["Txns UBA"] - df_full["Txns SBP"])
-df_full["% Diferencia"] = df_full["% Diferencia"].fillna((df_full["Transacciones Faltantes"] / df_full["Txns UBA"]) * 100)
-df_full["Radio"] = df_full["Radio"].fillna(df_full["Txns SBP"] / df_full["Txns UBA"])
-
-# Convertir "Fecha" a datetime
-df_full["Fecha"] = pd.to_datetime(df_full["Fecha"], format='%d/%m/%Y', errors='coerce')
-
-# Ordenar por fecha
-df_full = df_full.sort_values(by="Fecha")
-
-# Generar gráfico evolutivo
-import matplotlib.pyplot as plt
-plt.figure(figsize=(10, 5))
-plt.plot(df_full["Fecha"], df_full["Transacciones Faltantes"], label="Transacciones Faltantes", color="blue")
-plt.title("Evolución de Transacciones Faltantes")
-plt.xlabel("Fecha")
-plt.ylabel("Transacciones Faltantes")
-plt.legend()
-plt.grid(True)
-plt.xticks(rotation=45)
-plt.tight_layout()
-plt.savefig("evolucion_txs.png")
-plt.close()
-
-# [Siguiente celda] Configuración del correo
-outlook = win32.Dispatch('outlook.application')
-mail = outlook.CreateItem(0)
-# ... (resto del código del correo)
-
-_____
 # Después de workbook.save(filename=ruta_compartido)
-import xlwings as xw
-import pandas as pd
-import matplotlib.pyplot as plt
 import win32com.client
 
-# Forzar recalculación usando pywin32 (alternativa a xlwings.api.Calculate)
+# Forzar recalculación usando pywin32
 excel = win32com.client.Dispatch("Excel.Application")
 excel.Visible = False  # No mostrar Excel
 workbook = excel.Workbooks.Open(ruta_compartido)
-workbook.Calculate()  # Forzar recalculación de todas las fórmulas
+excel.Calculate()  # Forzar recalculación a nivel de aplicación
 workbook.Save()
 workbook.Close()
 excel.Quit()
 
+# Continúa con el resto del código
+import pandas as pd
+import matplotlib.pyplot as plt
+
 # Recargar el Excel con pandas
 df_full = pd.read_excel(ruta_compartido)
-print("Columnas disponibles:", df_full.columns)  # Depuración
-print("Primeras filas:", df_full.head())  # Depuración
+print("Columnas disponibles:", df_full.columns)
+print("Primeras filas:", df_full.head())
 
 # Convertir "Fecha" a datetime
 df_full["Fecha"] = pd.to_datetime(df_full["Fecha"], errors='coerce')
