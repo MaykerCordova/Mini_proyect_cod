@@ -56,3 +56,31 @@ attachment.PropertyAccessor.SetProperty("http://schemas.microsoft.com/mapi/propt
 
 # Enviar el correo
 mail.Send()
+
+
+_____________
+
+import matplotlib.pyplot as plt
+import pandas as pd  # Asegúrate de que esté importado
+
+# Recargar el Excel completo después de la actualización para tener todos los datos históricos
+df_full = pd.read_excel(ruta_compartido)
+
+# Convertir "Fecha" a datetime si no lo está (ajusta el formato según tus datos, ej. 'dd/mm/yyyy')
+df_full["Fecha"] = pd.to_datetime(df_full["Fecha"], format='%d/%m/%Y', errors='coerce')
+
+# Ordenar por fecha para el gráfico evolutivo
+df_full = df_full.sort_values(by="Fecha")
+
+# Generar gráfico evolutivo con datos completos
+plt.figure(figsize=(10, 5))
+plt.plot(df_full["Fecha"], df_full["Txns Faltantes"], label="Transacciones Faltantes", color="blue")
+plt.title("Evolución de Transacciones Faltantes")
+plt.xlabel("Fecha")
+plt.ylabel("Transacciones Faltantes")
+plt.legend()
+plt.grid(True)
+plt.xticks(rotation=45)  # Rotar etiquetas de fecha para mejor legibilidad
+plt.tight_layout()  # Ajustar el layout
+plt.savefig("evolucion_txs.png")  # Guardar gráfico como imagen
+plt.close()
