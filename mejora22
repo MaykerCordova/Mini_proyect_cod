@@ -40,3 +40,29 @@ plt.close()
 outlook = win32.Dispatch('outlook.application')
 mail = outlook.CreateItem(0)
 # ... (resto del código del correo)
+
+========
+# [Siguiente celda] Configuración del correo
+outlook = win32.Dispatch('outlook.application')
+mail = outlook.CreateItem(0)
+
+# Configurar el asunto
+mail.Subject = f"Informe Transacciones de Monitor al {df_full['Fecha'].max().strftime('%d %m %Y')}"
+
+# Configurar el cuerpo del correo con HTML e imagen incrustada
+mail.HTMLBody = f"""
+<html><body>
+<h3>Estimados,</h3>
+<p>Adjunto encontrarán el informe con la evolución mensual de las transacciones faltantes.</p>
+<div><img src="cid:evolucion_mensual_txs.png" alt="Evolución Mensual de Transacciones Faltantes" style="width:600px;"></div>
+<p>Saludos,</p>
+<p>Tu Nombre</p>
+</body></html>
+"""
+
+# Adjuntar la imagen
+attachment = mail.Attachments.Add("evolucion_mensual_txs.png")
+attachment.PropertyAccessor.SetProperty("http://schemas.microsoft.com/mapi/proptag/0x3712001E", "evolucion_mensual_txs.png")
+
+# Enviar el correo
+mail.Send()
