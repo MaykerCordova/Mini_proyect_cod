@@ -41,3 +41,46 @@ plt.close()
 outlook = win32.Dispatch('outlook.application')
 mail = outlook.CreateItem(0)
 # ... (resto del código del correo)
+
+_____
+# Después de workbook.save(filename=ruta_compartido)
+import xlwings as xw
+import pandas as pd
+import matplotlib.pyplot as plt
+import win32com.client
+
+# Forzar recalculación usando pywin32 (alternativa a xlwings.api.Calculate)
+excel = win32com.client.Dispatch("Excel.Application")
+excel.Visible = False  # No mostrar Excel
+workbook = excel.Workbooks.Open(ruta_compartido)
+workbook.Calculate()  # Forzar recalculación de todas las fórmulas
+workbook.Save()
+workbook.Close()
+excel.Quit()
+
+# Recargar el Excel con pandas
+df_full = pd.read_excel(ruta_compartido)
+print("Columnas disponibles:", df_full.columns)  # Depuración
+print("Primeras filas:", df_full.head())  # Depuración
+
+# Convertir "Fecha" a datetime
+df_full["Fecha"] = pd.to_datetime(df_full["Fecha"], errors='coerce')
+df_full = df_full.sort_values(by="Fecha")
+
+# Generar gráfico evolutivo
+plt.figure(figsize=(10, 5))
+plt.plot(df_full["Fecha"], df_full["Transacciones Faltantes"], label="Transacciones Faltantes", color="blue")
+plt.title("Evolución de Transacciones Faltantes")
+plt.xlabel("Fecha")
+plt.ylabel("Transacciones Faltantes")
+plt.legend()
+plt.grid(True)
+plt.xticks(rotation=45)
+plt.tight_layout()
+plt.savefig("evolucion_txs.png")
+plt.close()
+
+# [Siguiente celda] Configuración del correo
+outlook = win32.Dispatch('outlook.application')
+mail = outlook.CreateItem(0)
+# ... (resto del código del correo)
