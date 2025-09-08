@@ -1,0 +1,17 @@
+Descripción del Proceso Automatizado
+Se ha desarrollado un script en Python que automatiza por completo el flujo de monitoreo de transacciones UBA y Monitor+, reduciendo la intervención manual al mínimo. Este proceso se ejecuta en un solo paso diario, gestionado mediante un archivo .bat y programado con el Programador de Tareas de Windows, logrando una operación 100% autónoma. Los pasos detallados son:
+Lectura automática de correos en Outlook: El script utiliza bibliotecas como win32com.client para identificar y extraer automáticamente los números de transacciones de los buzones de Unibanca y Monitor+, procesando correos recibidos sin necesidad de intervención humana.
+Actualización de base de datos en Excel: Con la librería pandas, se registra y actualiza automáticamente un archivo Excel con los campos clave: Txsns UBA, Txsns SBP, % Diferencia (Txns Faltantes / UBA), y Txsns Faltantes (UBA - SBP), garantizando precisión y consistencia.
+Generación de gráficos dinámicos: Usando Seaborn y Matplotlib, se crean visualizaciones automáticas que incluyen un gráfico evolutivo mensual, diario (últimos 30 días), y diario (últimos 7 días), ofreciendo análisis visual sin esfuerzo manual.
+Envío automático de reportes: A través de la librería smtplib o la API de Outlook, el script envía correos electrónicos con los resultados y gráficos adjuntos a los interesados a las 8:00 AM diarias (hora configurable), asegurando entrega oportuna.
+Implementación Técnica: El script Python se encapsula en un archivo .bat (ej: @echo off\npython script.py) para facilitar su ejecución. Este .bat se programa en el Programador de Tareas de Windows con un desencadenador diario (ej: 8:00 AM), incluyendo la opción "Despertar el equipo" para garantizar ejecución incluso en suspensión. Esto elimina la necesidad de iniciar el proceso manualmente, logrando una solución autónoma y escalable.
+Duración: El proceso completo se ejecuta en menos de 1 minuto, optimizando recursos y tiempo comparado con los 10-15 minutos manuales previos.
+Resultado: Desde el 22/06/2025 (fecha de emisión original), esta automatización ha transformado el flujo en una operación eficiente, con reportes diarios listos antes de las 8:15 AM, sin intervención humana y con trazabilidad total.
+Consejos para Implementación en el Informe
+Visualización: Acompaña con un diagrama de flujo (ej: usa Draw.io o PowerPoint) que muestre los 4 pasos y la integración con .bat/Task Scheduler. Ejemplo:
+[Outlook] -> [Python Script] -> [Excel + Gráficos] -> [Email] -> [Fin]
+[Task Scheduler] ----^ (Desencadenador 8:00 AM)
+Enfasis en autonomía: Resalta frases como "sin intervención humana" y "100% autónomo" en negrita o con colores.
+Métricas: Incluye el tiempo de ejecución (<1 min) y el ahorro (10-15 min/día) para cuantificar el impacto.
+Personalización: Si tienes datos específicos (ej: número de transacciones procesadas), añádelos para mayor credibilidad.
+Esta descripción no solo detalla el proceso, sino que lo presenta como una solución técnica avanzada y lista para ser adoptada, alineada con tus objetivos de automatización total. Si quieres ajustar algo (ej: añadir más detalles técnicos o cambiar la hora a 9:00 AM), dime y lo adapto.
