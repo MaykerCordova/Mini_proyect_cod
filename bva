@@ -1,0 +1,91 @@
+Sub ImportarMultiplesExcelACarpeta()
+    ' Declarar variables
+    Dim rutaCarpeta As String
+    Dim archivo As String
+    Dim nombreTabla As String
+    Dim contador As Integer
+    Dim totalArchivos As Integer
+    
+    ' CONFIGURACIÓN - MODIFICA ESTAS LÍNEAS SEGÚN TUS NECESIDADES
+    rutaCarpeta = "C:\MiCarpeta\"  ' Cambia por la ruta de tu carpeta
+    nombreTabla = "DatosImportados"  ' Nombre de la tabla donde importar
+    
+    ' Asegurar que la ruta termine con backslash
+    If Right(rutaCarpeta, 1) <> "\" Then
+        rutaCarpeta = rutaCarpeta & "\"
+    End If
+    
+    ' Inicializar contadores
+    contador = 0
+    totalArchivos = 0
+    
+    ' Contar total de archivos Excel
+    archivo = Dir(rutaCarpeta & "*.xlsx")
+    Do While archivo <> ""
+        totalArchivos = totalArchivos + 1
+        archivo = Dir()
+    Loop
+    
+    ' También contar archivos .xls
+    archivo = Dir(rutaCarpeta & "*.xls")
+    Do While archivo <> ""
+        totalArchivos = totalArchivos + 1
+        archivo = Dir()
+    Loop
+    
+    If totalArchivos = 0 Then
+        MsgBox "No se encontraron archivos Excel en la carpeta especificada.", vbExclamation
+        Exit Sub
+    End If
+    
+    ' Confirmar antes de proceder
+    If MsgBox("Se encontraron " & totalArchivos & " archivos Excel." & vbCrLf & _
+              "¿Desea proceder con la importación?", vbYesNo + vbQuestion) = vbNo Then
+        Exit Sub
+    End If
+    
+    ' Importar archivos .xlsx
+    archivo = Dir(rutaCarpeta & "*.xlsx")
+    Do While archivo <> ""
+        On Error Resume Next
+        
+        ' Intentar importar el archivo
+        DoCmd.TransferSpreadsheet acImport, acSpreadsheetTypeExcel12Xml, _
+            nombreTabla, rutaCarpeta & archivo, True
+        
+        If Err.Number = 0 Then
+            contador = contador + 1
+            Debug.Print "Importado exitosamente: " & archivo
+        Else
+            Debug.Print "Error al importar " & archivo & ": " & Err.Description
+        End If
+        
+        Err.Clear
+        archivo = Dir()
+    Loop
+    
+    ' Importar archivos .xls (versiones anteriores de Excel)
+    archivo = Dir(rutaCarpeta & "*.xls")
+    Do While archivo <> ""
+        On Error Resume Next
+        
+        ' Intentar importar el archivo
+        DoCmd.TransferSpreadsheet acImport, acSpreadsheetTypeExcel8, _
+            nombreTabla, rutaCarpeta & archivo, True
+        
+        If Err.Number = 0 Then
+            contador = contador + 1
+            Debug.Print "Importado exitosamente: " & archivo
+        Else
+            Debug.Print "Error al importar " & archivo & ": " & Err.Description
+        End If
+        
+        Err.Clear
+        archivo = Dir()
+    Loop
+    
+    ' Mostrar resultado final
+    MsgBox "Proceso completado." & vbCrLf & _
+           "Archivos importados exitosamente: " & contador & " de " & totalArchivos, _
+           vbInformation
+End Sub
