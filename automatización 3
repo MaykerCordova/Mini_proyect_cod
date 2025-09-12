@@ -1,0 +1,293 @@
+import win32com.client
+import zipfile
+import os
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+from datetime import datetime, timedelta
+import yagmail
+from pathlib import Path
+
+class ProcesadorReportesFraude:
+    def __init__(self):
+        self.carpeta_historicos = "datos_historicos"
+        self.carpeta_diarios = "datos_diarios"
+        self.carpeta_temp = "temp"
+        self.carpeta_graficas = "graficas_reportes"
+        self.archivo_dashboard = "dashboard_fraudes.xlsx"
+        
+        # Crear carpetas si no existen
+        for carpeta in [self.carpeta_historicos, self.carpeta_diarios, 
+                       self.carpeta_temp, self.carpeta_graficas]:
+            Path(carpeta).mkdir(exist_ok=True)
+    
+    def procesar_correo_diario(self):
+        """Función principal que ejecuta todo el flujo"""
+        print(f"Iniciando proceso diario - {datetime.now()}")
+        
+        # Paso 1: Extraer Excel del ZIP del correo
+        datos_dia = self.extraer_excel_de_correo()
+        
+        if datos_dia is not None:
+            # Paso 2: Guardar Excel del día
+            archivo_diario = self.guardar_excel_diario(datos_dia)
+            
+            # Paso 3: Actualizar dashboard histórico
+            self.actualizar_dashboard_historico(datos_dia)
+            
+            # Paso 4: Generar gráficas del día
+            graficas_generadas = self.generar_graficas_diarias(datos_dia)
+            
+            # Paso 5: Enviar reporte por correo
+            self.enviar_reporte_correo(datos_dia, graficas_generadas)
+            
+            print("Proceso completado exitosamente")
+        else:
+            print("No se encontraron datos para procesar hoy")
+    
+    def extraer_excel_de_correo(self):
+        """Extrae Excel del ZIP adjunto en correos de hoy"""
+        try:
+            outlook = win32com.client.Dispatch("Outlook.Application")
+            namespace = outlook.GetNamespace("MAPI")
+            inbox = namespace.GetDefaultFolder(6)  # Inbox
+            
+            # Filtrar correos de hoy
+            hoy = datetime.now().strftime("%m/%d/%Y")
+            messages = inbox.Items.Restrict(f"[ReceivedTime] >= '{hoy}'")
+            
+            for message in messages:
+                # Buscar correos con ZIP (ajusta el filtro según tu remitente)
+                if self.es_correo_reporte_fraude(message):
+                    
+                    for attachment in message.Attachments:
+                        if attachment.FileName.endswith('.zip'):
+                            
+                            # Guardar ZIP temporalmente
+                            zip_path = os.path.join(self.carpeta_temp, attachment.FileName)
+                            attachment.SaveAsFile(zip_path)
+                            
+                            # Extraer Excel del ZIP
+                            datos = self.extraer_excel_de_zip(zip_path)
+                            
+                            # Limpiar archivo temporal
+                            os.remove(zip_path)
+                            
+                            return datos
+            
+            return None
+            
+        except Exception as e:
+            print(f"Error al procesar correo: {e}")
+            return None
+    
+    def es_correo_reporte_fraude(self, message):
+        """Determina si el correo contiene el reporte diario de fraudes"""
+        # Ajusta estos criterios según tu caso
+        remitente_valido = "reportes@tuempresa.com" in str(message.SenderEmailAddress).lower()
+        asunto_valido = "reporte diario" in str(message.Subject).lower() or "fraudes" in str(message.Subject).lower()
+        
+        return remitente_valido or asunto_valido
+    
+    def extraer_excel_de_zip(self, zip_path):
+        """Extrae Excel del archivo ZIP"""
+        try:
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                # Listar archivos en el ZIP
+                archivos = zip_ref.namelist()
+                
+                # Buscar archivo Excel
+                archivo_excel = None
+                for archivo in archivos:
+                    if archivo.endswith(('.xlsx', '.xls')):
+                        archivo_excel = archivo
+                        break
+                
+                if archivo_excel:
+                    # Extraer a carpeta temporal
+                    zip_ref.extract(archivo_excel, self.carpeta_temp)
+                    
+                    # Cargar datos
+                    ruta_excel = os.path.join(self.carpeta_temp, archivo_excel)
+                    datos = pd.read_excel(ruta_excel)
+                    
+                    # Limpiar archivo temporal
+                    os.remove(ruta_excel)
+                    
+                    return datos
+                    
+            return None
+            
+        except Exception as e:
+            print(f"Error al extraer ZIP: {e}")
+            return None
+    
+    def guardar_excel_diario(self, datos):
+        """Guarda el Excel del día en la carpeta diarios"""
+        fecha_hoy = datetime.now().strftime("%Y%m%d")
+        nombre_archivo = f"fraudes_{fecha_hoy}.xlsx"
+        ruta_archivo = os.path.join(self.carpeta_diarios, nombre_archivo)
+        
+        datos.to_excel(ruta_archivo, index=False)
+        print(f"Excel diario guardado: {nombre_archivo}")
+        
+        return ruta_archivo
+    
+    def actualizar_dashboard_historico(self, datos_nuevos):
+        """Actualiza el Excel dashboard con los datos históricos"""
+        ruta_dashboard = os.path.join(self.carpeta_historicos, self.archivo_dashboard)
+        
+        try:
+            # Si existe dashboard, cargar datos históricos
+            if os.path.exists(ruta_dashboard):
+                datos_historicos = pd.read_excel(ruta_dashboard)
+                
+                # Combinar datos (evitar duplicados por fecha si existe columna fecha)
+                if 'fecha' in datos_nuevos.columns:
+                    # Filtrar datos históricos para evitar duplicados del día
+                    hoy = datetime.now().date()
+                    datos_historicos = datos_historicos[
+                        pd.to_datetime(datos_historicos['fecha']).dt.date != hoy
+                    ]
+                
+                datos_combinados = pd.concat([datos_historicos, datos_nuevos], 
+                                           ignore_index=True)
+            else:
+                datos_combinados = datos_nuevos
+            
+            # Guardar dashboard actualizado
+            datos_combinados.to_excel(ruta_dashboard, index=False)
+            print("Dashboard histórico actualizado")
+            
+        except Exception as e:
+            print(f"Error al actualizar dashboard: {e}")
+    
+    def generar_graficas_diarias(self, datos):
+        """Genera gráficas con los datos del día"""
+        graficas_generadas = []
+        fecha_hoy = datetime.now().strftime("%Y%m%d")
+        
+        try:
+            # Configurar estilo de seaborn
+            sns.set_style("whitegrid")
+            plt.rcParams['figure.figsize'] = (12, 8)
+            
+            # Gráfica 1: Número de fraudes por negocio
+            if 'negocio' in datos.columns:
+                plt.figure(figsize=(12, 6))
+                fraudes_por_negocio = datos['negocio'].value_counts()
+                sns.barplot(x=fraudes_por_negocio.values, y=fraudes_por_negocio.index)
+                plt.title(f'Fraudes por Negocio - {datetime.now().strftime("%d/%m/%Y")}')
+                plt.xlabel('Número de Fraudes')
+                
+                archivo_grafica1 = os.path.join(self.carpeta_graficas, f"fraudes_negocio_{fecha_hoy}.png")
+                plt.tight_layout()
+                plt.savefig(archivo_grafica1, dpi=300, bbox_inches='tight')
+                plt.close()
+                graficas_generadas.append(archivo_grafica1)
+            
+            # Gráfica 2: Fraudes por horario
+            if 'hora' in datos.columns or 'timestamp' in datos.columns:
+                plt.figure(figsize=(12, 6))
+                
+                # Extraer hora si es timestamp
+                if 'timestamp' in datos.columns:
+                    datos['hora'] = pd.to_datetime(datos['timestamp']).dt.hour
+                
+                fraudes_por_hora = datos['hora'].value_counts().sort_index()
+                sns.lineplot(x=fraudes_por_hora.index, y=fraudes_por_hora.values, marker='o')
+                plt.title(f'Fraudes por Horario - {datetime.now().strftime("%d/%m/%Y")}')
+                plt.xlabel('Hora del Día')
+                plt.ylabel('Número de Fraudes')
+                plt.xticks(range(0, 24))
+                
+                archivo_grafica2 = os.path.join(self.carpeta_graficas, f"fraudes_horario_{fecha_hoy}.png")
+                plt.tight_layout()
+                plt.savefig(archivo_grafica2, dpi=300, bbox_inches='tight')
+                plt.close()
+                graficas_generadas.append(archivo_grafica2)
+            
+            # Gráfica 3: Resumen total
+            plt.figure(figsize=(10, 6))
+            total_fraudes = len(datos)
+            
+            # Crear gráfica de resumen
+            resumen = {
+                'Total Fraudes': total_fraudes,
+                'Negocios Afectados': datos['negocio'].nunique() if 'negocio' in datos.columns else 0,
+                'Promedio por Hora': total_fraudes / 24
+            }
+            
+            sns.barplot(x=list(resumen.keys()), y=list(resumen.values()))
+            plt.title(f'Resumen Diario de Fraudes - {datetime.now().strftime("%d/%m/%Y")}')
+            plt.ylabel('Cantidad')
+            
+            archivo_grafica3 = os.path.join(self.carpeta_graficas, f"resumen_diario_{fecha_hoy}.png")
+            plt.tight_layout()
+            plt.savefig(archivo_grafica3, dpi=300, bbox_inches='tight')
+            plt.close()
+            graficas_generadas.append(archivo_grafica3)
+            
+            print(f"Gráficas generadas: {len(graficas_generadas)}")
+            return graficas_generadas
+            
+        except Exception as e:
+            print(f"Error al generar gráficas: {e}")
+            return []
+    
+    def enviar_reporte_correo(self, datos, graficas):
+        """Envía reporte por correo con gráficas adjuntas"""
+        try:
+            # Configurar yagmail (necesitas configurar tu email)
+            gmail_user = "tu_email@gmail.com"  # Cambiar por tu email
+            gmail_password = "tu_contraseña"   # Usar contraseña de aplicación
+            
+            yag = yagmail.SMTP(gmail_user, gmail_password)
+            
+            # Preparar contenido del correo
+            fecha_reporte = datetime.now().strftime("%d/%m/%Y")
+            total_fraudes = len(datos)
+            
+            asunto = f"Reporte Diario de Fraudes - {fecha_reporte}"
+            
+            cuerpo = f"""
+            Reporte Diario de Fraudes
+            Fecha: {fecha_reporte}
+            
+            RESUMEN:
+            • Total de fraudes detectados: {total_fraudes}
+            • Negocios afectados: {datos['negocio'].nunique() if 'negocio' in datos.columns else 'N/A'}
+            • Horario con más fraudes: {datos['hora'].mode()[0] if 'hora' in datos.columns else 'N/A'}:00
+            
+            Se adjuntan las gráficas detalladas del análisis.
+            
+            Este es un reporte automático generado por el sistema.
+            """
+            
+            # Lista de destinatarios
+            destinatarios = [
+                "gerencia@empresa.com",
+                "seguridad@empresa.com",
+                "analisis@empresa.com"
+            ]
+            
+            # Enviar correo con archivos adjuntos
+            yag.send(
+                to=destinatarios,
+                subject=asunto,
+                contents=cuerpo,
+                attachments=graficas
+            )
+            
+            print(f"Reporte enviado a {len(destinatarios)} destinatarios")
+            
+        except Exception as e:
+            print(f"Error al enviar correo: {e}")
+
+# Función principal para ejecutar
+def main():
+    procesador = ProcesadorReportesFraude()
+    procesador.procesar_correo_diario()
+
+if __name__ == "__main__":
+    main()
