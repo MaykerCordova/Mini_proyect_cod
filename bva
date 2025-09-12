@@ -89,3 +89,51 @@ Sub ImportarMultiplesExcelACarpeta()
            "Archivos importados exitosamente: " & contador & " de " & totalArchivos, _
            vbInformation
 End Sub
+
+
+
+ggʻggggg
+Sub VerificarArchivosEnCarpeta()
+    Dim rutaCarpeta As String
+    Dim archivo As String
+    Dim listaArchivos As String
+    Dim contador As Integer
+    
+    ' CONFIGURACIÓN - USA LA MISMA RUTA
+    rutaCarpeta = "C:\MiCarpeta\"  ' Cambia por tu ruta real
+    
+    ' Asegurar que termine con backslash
+    If Right(rutaCarpeta, 1) <> "\" Then
+        rutaCarpeta = rutaCarpeta & "\"
+    End If
+    
+    listaArchivos = "ARCHIVOS ENCONTRADOS:" & vbCrLf & vbCrLf
+    contador = 0
+    
+    ' Buscar archivos .xlsx
+    archivo = Dir(rutaCarpeta & "*.xlsx")
+    If archivo <> "" Then
+        listaArchivos = listaArchivos & "--- Archivos .XLSX ---" & vbCrLf
+        Do While archivo <> ""
+            contador = contador + 1
+            listaArchivos = listaArchivos & contador & ". " & archivo & vbCrLf
+            archivo = Dir()
+        Loop
+        listaArchivos = listaArchivos & vbCrLf
+    End If
+    
+    ' Buscar archivos .xls
+    archivo = Dir(rutaCarpeta & "*.xls")
+    If archivo <> "" Then
+        listaArchivos = listaArchivos & "--- Archivos .XLS ---" & vbCrLf
+        Do While archivo <> ""
+            contador = contador + 1
+            listaArchivos = listaArchivos & contador & ". " & archivo & vbCrLf
+            archivo = Dir()
+        Loop
+    End If
+    
+    ' Mostrar resultado
+    listaArchivos = listaArchivos & vbCrLf & "TOTAL: " & contador & " archivos"
+    MsgBox listaArchivos, vbInformation, "Archivos en: " & rutaCarpeta
+End Sub
