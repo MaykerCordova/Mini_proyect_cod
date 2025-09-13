@@ -1,0 +1,197 @@
+Sub ConsolidarExcelAAccess()
+    Dim conn As Object
+    Dim rs As Object
+    Dim wb As Workbook
+    Dim ws As Worksheet
+    Dim lastRow As Long, lastCol As Long
+    Dim i As Long, j As Long
+    Dim filePath As String
+    Dim fileName As String
+    Dim folderPath As String
+    Dim accessPath As String
+    Dim sqlCreate As String
+    Dim sqlInsert As String
+    Dim valores As String
+    Dim cellValue As Variant
+    
+    ' Configuración de rutas
+    folderPath = "C:\Tu\Ruta\Archivos\Excel\" ' CAMBIAR POR TU RUTA
+    accessPath = "C:\Tu\Ruta\BaseDatos.accdb" ' CAMBIAR POR TU RUTA DE ACCESS
+    
+    ' Crear conexión a Access
+    Set conn = CreateObject("ADODB.Connection")
+    conn.Open "Provider=Microsoft.ACE.OLEDB.12.0;Data Source=" & accessPath
+    
+    ' Crear tabla si no existe
+    sqlCreate = "CREATE TABLE IF NOT EXISTS Vista_Reclamos_Consolidada (" & _
+                "NUMERO_RECLAMO TEXT(50), " & _
+                "FECHA_REGISTRO DATETIME, " & _
+                "CLIENTE TEXT(255), " & _
+                "ESTADOWORKFLOW TEXT(100), " & _
+                "RESULTADO TEXT(255), " & _
+                "FECHACIERRE DATETIME, " & _
+                "DESCRIPCION MEMO, " & _
+                "INFORMACION_RESULTADO MEMO, " & _
+                "SUPERVISORSOLUCIONADOR TEXT(255), " & _
+                "NOMBRESOLUCIONADOR TEXT(255), " & _
+                "FAMILIA TEXT(100), " & _
+                "NUMERODOCUMENTO TEXT(50), " & _
+                "PRODUCTO TEXT(255), " & _
+                "TIPOLOGIA TEXT(255), " & _
+                "ARCHIVO_ORIGEN TEXT(100))"
+    
+    On Error Resume Next
+    conn.Execute sqlCreate
+    On Error GoTo 0
+    
+    ' Lista de archivos a procesar
+    Dim archivos As Variant
+    archivos = Array("Vista_Reclamos_2020.xlsx", _
+                     "Vista_Reclamos_2021.xlsx", _
+                     "Vista_Reclamos_2022.xlsx", _
+                     "Vista_Reclamos_2023.xlsx", _
+                     "Vista_Reclamos_2024.xlsx", _
+                     "Vista_Reclamos_2025.xlsx")
+    
+    ' Desactivar actualizaciones de pantalla para mejorar rendimiento
+    Application.ScreenUpdating = False
+    Application.DisplayAlerts = False
+    Application.Calculation = xlCalculationManual
+    
+    ' Procesar cada archivo
+    For Each fileName In archivos
+        filePath = folderPath & fileName
+        
+        ' Verificar si el archivo existe
+        If Dir(filePath) <> "" Then
+            Debug.Print "Procesando: " & fileName
+            
+            ' Abrir archivo
+            Set wb = Workbooks.Open(filePath, ReadOnly:=True)
+            Set ws = wb.Worksheets(1) ' Primera hoja
+            
+            ' Encontrar último rango con datos
+            lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+            lastCol = 14 ' Número de columnas que tienes
+            
+            ' Procesar datos por lotes (1000 filas a la vez para manejar memoria)
+            Dim batchSize As Long
+            batchSize = 1000
+            
+            For i = 2 To lastRow Step batchSize ' Empezar en fila 2 (saltar encabezados)
+                Dim endRow As Long
+                endRow = Application.Min(i + batchSize - 1, lastRow)
+                
+                ' Construir INSERT por lotes
+                sqlInsert = "INSERT INTO Vista_Reclamos_Consolidada (" & _
+                           "NUMERO_RECLAMO, FECHA_REGISTRO, CLIENTE, ESTADOWORKFLOW, " & _
+                           "RESULTADO, FECHACIERRE, DESCRIPCION, INFORMACION_RESULTADO, " & _
+                           "SUPERVISORSOLUCIONADOR, NOMBRESOLUCIONADOR, FAMILIA, " & _
+                           "NUMERODOCUMENTO, PRODUCTO, TIPOLOGIA, ARCHIVO_ORIGEN) VALUES "
+                
+                Dim valuesArray() As String
+                ReDim valuesArray(0 To endRow - i)
+                Dim valueIndex As Long
+                valueIndex = 0
+                
+                ' Procesar cada fila del lote
+                For j = i To endRow
+                    valores = "("
+                    
+                    ' Procesar cada columna
+                    For k = 1 To lastCol
+                        cellValue = ws.Cells(j, k).Value
+                        
+                        ' Manejar valores nulos y formatear según tipo
+                        If IsEmpty(cellValue) Or IsNull(cellValue) Then
+                            valores = valores & "NULL"
+                        ElseIf k = 2 Or k = 6 Then ' Columnas de fecha
+                            If IsDate(cellValue) Then
+                                valores = valores & "#" & Format(cellValue, "mm/dd/yyyy hh:nn:ss") & "#"
+                            Else
+                                valores = valores & "NULL"
+                            End If
+                        Else ' Columnas de texto
+                            ' Escapar comillas simples
+                            cellValue = Replace(CStr(cellValue), "'", "''")
+                            valores = valores & "'" & cellValue & "'"
+                        End If
+                        
+                        If k < lastCol Then valores = valores & ", "
+                    Next k
+                    
+                    ' Añadir nombre del archivo origen
+                    valores = valores & ", '" & fileName & "')"
+                    
+                    valuesArray(valueIndex) = valores
+                    valueIndex = valueIndex + 1
+                Next j
+                
+                ' Ejecutar INSERT por lotes
+                sqlInsert = sqlInsert & Join(valuesArray, ", ")
+                
+                On Error GoTo ErrorHandler
+                conn.Execute sqlInsert
+                On Error GoTo 0
+                
+                Debug.Print "Procesadas filas " & i & " a " & endRow & " de " & fileName
+                
+                ' Limpiar memoria
+                Erase valuesArray
+                DoEvents ' Permitir que Windows procese otros eventos
+            Next i
+            
+            ' Cerrar archivo
+            wb.Close False
+            Set wb = Nothing
+            Set ws = Nothing
+            
+            Debug.Print "Completado: " & fileName
+        Else
+            Debug.Print "Archivo no encontrado: " & fileName
+        End If
+    Next fileName
+    
+    ' Cerrar conexión
+    conn.Close
+    Set conn = Nothing
+    
+    ' Restaurar configuraciones de Excel
+    Application.ScreenUpdating = True
+    Application.DisplayAlerts = True
+    Application.Calculation = xlCalculationAutomatic
+    
+    MsgBox "Consolidación completada exitosamente!", vbInformation
+    Exit Sub
+    
+ErrorHandler:
+    Debug.Print "Error en fila " & j & " de " & fileName & ": " & Err.Description
+    Resume Next
+End Sub
+
+' Macro adicional para crear la base de datos Access si no existe
+Sub CrearBaseDatosAccess()
+    Dim accessApp As Object
+    Dim accessPath As String
+    
+    accessPath = "C:\Tu\Ruta\BaseDatos.accdb" ' CAMBIAR POR TU RUTA
+    
+    ' Verificar si Access está instalado
+    On Error GoTo ErrorAccess
+    Set accessApp = CreateObject("Access.Application")
+    
+    ' Crear nueva base de datos si no existe
+    If Dir(accessPath) = "" Then
+        accessApp.NewCurrentDatabase accessPath
+        MsgBox "Base de datos Access creada en: " & accessPath
+    Else
+        MsgBox "La base de datos ya existe en: " & accessPath
+    End If
+    
+    accessApp.Quit
+    Set accessApp = Nothing
+    Exit Sub
+    
+ErrorAccess:
+    MsgBox "Error: No se puede crear la base de datos Access. Verifique que Access esté instalado."
+End Sub
