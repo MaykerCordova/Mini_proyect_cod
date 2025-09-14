@@ -202,8 +202,8 @@ Private Function ImportarUnArchivo(rutaArchivo As String, nombreArchivo As Strin
     Debug.Print "    → " & registrosImportados & " registros transferidos"
     
 Limpiar:
-    ' Eliminar tabla temporal
-    DoCmd.DeleteObject acTable, tablaTemporal
+    ' Eliminar tabla temporal de forma segura
+    Call EliminarTablaTemporal(tablaTemporal)
     
     ImportarUnArchivo = True
     Exit Function
@@ -211,10 +211,8 @@ Limpiar:
 ErrorImportar:
     Debug.Print "    ✗ Error: " & Err.Description
     
-    ' Limpiar tabla temporal si existe
-    On Error Resume Next
-    DoCmd.DeleteObject acTable, tablaTemporal
-    On Error GoTo 0
+    ' Limpiar tabla temporal en caso de error
+    Call EliminarTablaTemporal(tablaTemporal)
     
     ImportarUnArchivo = False
 End Function
@@ -253,6 +251,28 @@ Sub VerEstadisticas()
     DoCmd.OpenTable "Vista_Reclamos_Consolidada"
     Exit Sub
     
-NoExiste:
-    MsgBox "La tabla no existe aún. Ejecute primero 'ImportarExcelSimple'", vbExclamation
+' =============================================================================
+' FUNCIÓN AUXILIAR PARA ELIMINAR TABLAS TEMPORALES DE FORMA SEGURA
+' =============================================================================
+Private Sub EliminarTablaTemporal(nombreTabla As String)
+    On Error Resume Next
+    
+    ' Verificar si la tabla existe antes de intentar eliminarla
+    Dim existe As Boolean
+    existe = False
+    
+    Dim tdf As DAO.TableDef
+    For Each tdf In CurrentDb.TableDefs
+        If tdf.Name = nombreTabla Then
+            existe = True
+            Exit For
+        End If
+    Next tdf
+    
+    If existe Then
+        DoCmd.DeleteObject acTable, nombreTabla
+        Debug.Print "    → Tabla temporal eliminada: " & nombreTabla
+    End If
+    
+    On Error GoTo 0
 End Sub
