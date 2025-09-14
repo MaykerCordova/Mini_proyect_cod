@@ -1,111 +1,90 @@
 Option Compare Database
 
-' Macro principal para consolidar archivos Excel
-Sub ConsolidarArchivosExcel()
-    Dim rutaCarpeta As String
-    Dim nombreArchivo As String
-    Dim rutaCompleta As String
-    Dim tablaTemporal As String
-    Dim contadorArchivos As Integer
+' =============================================================================
+' MACRO PRINCIPAL - EJECUTAR SOLO ESTA FUNCIÓN
+' =============================================================================
+Sub EjecutarTodoEnUno()
+    ' Esta es la ÚNICA función que necesitas ejecutar
+    ' Hace todo el proceso completo en orden lógico
     
-    ' CAMBIAR ESTA RUTA POR LA TUYA
-    rutaCarpeta = "C:\Users\TuUsuario\OneDrive\The Bank of Nova Scotia\Valverde Pacheco, Wilmer Alberto - Sac\"
+    Dim mensajeInicio As String
+    mensajeInicio = "Esta macro va a:" & vbCrLf & vbCrLf & _
+                   "1. Crear la tabla consolidada si no existe" & vbCrLf & _
+                   "2. Buscar todos los archivos Excel en la carpeta" & vbCrLf & _
+                   "3. Importar todos los datos automáticamente" & vbCrLf & _
+                   "4. Mostrar los resultados" & vbCrLf & vbCrLf & _
+                   "¿Desea continuar?"
     
-    ' Crear tabla principal si no existe
-    Call CrearTablaConsolidada
-    
-    ' Limpiar tabla antes de consolidar (opcional)
-    Dim respuesta As Integer
-    respuesta = MsgBox("¿Desea limpiar la tabla antes de importar?", vbYesNo + vbQuestion, "Confirmar")
-    If respuesta = vbYes Then
-        DoCmd.RunSQL "DELETE FROM Vista_Reclamos_Consolidada"
+    If MsgBox(mensajeInicio, vbYesNo + vbQuestion, "Confirmación de inicio") = vbNo Then
+        Exit Sub
     End If
     
-    contadorArchivos = 0
+    ' PASO 1: Verificar y crear tabla principal
+    Debug.Print "=== INICIANDO PROCESO COMPLETO ==="
+    Debug.Print "Paso 1: Creando tabla consolidada..."
     
-    ' Buscar archivos Excel en la carpeta
-    nombreArchivo = Dir(rutaCarpeta & "Vista_Reclamos_*.xlsx")
+    If Not CrearTablaConsolidada() Then
+        MsgBox "Error: No se pudo crear la tabla principal. Proceso cancelado.", vbCritical
+        Exit Sub
+    End If
     
-    Do While nombreArchivo <> ""
-        rutaCompleta = rutaCarpeta & nombreArchivo
+    Debug.Print "✓ Tabla creada exitosamente"
+    
+    ' PASO 2: Preguntar si limpiar datos existentes
+    Dim limpiarTabla As Boolean
+    If DCount("*", "Vista_Reclamos_Consolidada") > 0 Then
+        Dim respuesta As Integer
+        respuesta = MsgBox("La tabla ya tiene datos. ¿Desea limpiarla antes de importar?", _
+                          vbYesNoCancel + vbQuestion, "Datos existentes")
         
-        Debug.Print "Procesando: " & nombreArchivo
+        If respuesta = vbCancel Then Exit Sub
+        limpiarTabla = (respuesta = vbYes)
         
-        ' Importar archivo Excel
-        If ImportarExcelAAccess(rutaCompleta, nombreArchivo) Then
-            contadorArchivos = contadorArchivos + 1
-            Debug.Print "Importado exitosamente: " & nombreArchivo
-        Else
-            Debug.Print "Error al importar: " & nombreArchivo
+        If limpiarTabla Then
+            Debug.Print "Paso 2: Limpiando tabla existente..."
+            DoCmd.RunSQL "DELETE FROM Vista_Reclamos_Consolidada"
+            Debug.Print "✓ Tabla limpiada"
         End If
-        
-        ' Buscar siguiente archivo
-        nombreArchivo = Dir()
-    Loop
+    End If
     
-    If contadorArchivos > 0 Then
-        MsgBox "Consolidación completada. Se importaron " & contadorArchivos & " archivos.", vbInformation
+    ' PASO 3: Importar archivos Excel
+    Debug.Print "Paso 3: Iniciando importación de archivos..."
+    
+    If Not ImportarTodosLosArchivos() Then
+        MsgBox "El proceso terminó con errores. Revise la ventana Inmediato para detalles.", vbExclamation
+    Else
+        ' PASO 4: Mostrar resultados
+        Debug.Print "✓ PROCESO COMPLETADO EXITOSAMENTE"
+        
+        Dim totalRegistros As Long
+        totalRegistros = DCount("*", "Vista_Reclamos_Consolidada")
+        
+        MsgBox "¡Importación completada!" & vbCrLf & vbCrLf & _
+               "Total de registros importados: " & totalRegistros & vbCrLf & _
+               "Se abrirá la tabla para mostrar los resultados.", _
+               vbInformation, "Proceso Completado"
         
         ' Abrir tabla para mostrar resultados
         DoCmd.OpenTable "Vista_Reclamos_Consolidada"
-    Else
-        MsgBox "No se encontraron archivos Excel en la carpeta especificada.", vbExclamation
     End If
 End Sub
 
-' Función para importar un archivo Excel específico
-Function ImportarExcelAAccess(rutaArchivo As String, nombreArchivo As String) As Boolean
-    On Error GoTo ErrorHandler
-    
-    Dim tablaTemporal As String
-    tablaTemporal = "Temp_" & Format(Now(), "hhmmss")
-    
-    ' Importar Excel a tabla temporal
-    DoCmd.TransferSpreadsheet acImport, acSpreadsheetTypeExcel12Xml, tablaTemporal, rutaArchivo, True, "Hoja1!"
-    
-    ' Construir SQL para insertar en tabla principal
-    Dim sqlInsert As String
-    sqlInsert = "INSERT INTO Vista_Reclamos_Consolidada " & _
-                "(NUMERO_RECLAMO, FECHA_REGISTRO, CLIENTE, ESTADOWORKFLOW, " & _
-                "RESULTADO, FECHACIERRE, DESCRIPCION, INFORMACION_RESULTADO, " & _
-                "SUPERVISORSOLUCIONADOR, NOMBRESOLUCIONADOR, FAMILIA, " & _
-                "NUMERODOCUMENTO, PRODUCTO, TIPOLOGIA, ARCHIVO_ORIGEN) " & _
-                "SELECT NUMERO_RECLAMO, FECHA_REGISTRO, CLIENTE, ESTADOWORKFLOW, " & _
-                "RESULTADO, FECHACIERRE, DESCRIPCION, INFORMACION_RESULTADO, " & _
-                "SUPERVISORSOLUCIONADOR, NOMBRESOLUCIONADOR, FAMILIA, " & _
-                "NUMERODOCUMENTO, PRODUCTO, TIPOLOGIA, '" & nombreArchivo & "' " & _
-                "FROM " & tablaTemporal
-    
-    ' Ejecutar inserción
-    DoCmd.RunSQL sqlInsert
-    
-    ' Eliminar tabla temporal
-    DoCmd.DeleteObject acTable, tablaTemporal
-    
-    ImportarExcelAAccess = True
-    Exit Function
-    
-ErrorHandler:
-    Debug.Print "Error importando " & nombreArchivo & ": " & Err.Description
-    
-    ' Limpiar tabla temporal si existe
-    If DCount("*", "MSysObjects", "Name='" & tablaTemporal & "' AND Type=1") > 0 Then
-        DoCmd.DeleteObject acTable, tablaTemporal
-    End If
-    
-    ImportarExcelAAccess = False
-End Function
+' =============================================================================
+' FUNCIONES AUXILIARES (NO EJECUTAR DIRECTAMENTE)
+' =============================================================================
 
-' Crear tabla consolidada principal
-Sub CrearTablaConsolidada()
+' Función para crear la tabla consolidada
+Private Function CrearTablaConsolidada() As Boolean
     On Error GoTo ErrorHandler
     
     ' Verificar si tabla ya existe
     If DCount("*", "MSysObjects", "Name='Vista_Reclamos_Consolidada' AND Type=1") > 0 Then
-        Exit Sub ' Ya existe
+        Debug.Print "✓ La tabla Vista_Reclamos_Consolidada ya existe"
+        CrearTablaConsolidada = True
+        Exit Function
     End If
     
-    ' Crear tabla
+    ' Crear tabla nueva
     Dim sqlCreate As String
     sqlCreate = "CREATE TABLE Vista_Reclamos_Consolidada (" & _
                 "ID AUTOINCREMENT PRIMARY KEY, " & _
@@ -127,41 +106,170 @@ Sub CrearTablaConsolidada()
                 "FECHA_IMPORTACION DATETIME DEFAULT Now())"
     
     DoCmd.RunSQL sqlCreate
-    Debug.Print "Tabla Vista_Reclamos_Consolidada creada exitosamente"
-    Exit Sub
+    Debug.Print "✓ Tabla Vista_Reclamos_Consolidada creada exitosamente"
+    
+    CrearTablaConsolidada = True
+    Exit Function
     
 ErrorHandler:
-    Debug.Print "Error creando tabla: " & Err.Description
-End Sub
+    Debug.Print "✗ Error creando tabla: " & Err.Description
+    CrearTablaConsolidada = False
+End Function
 
-' Macro para actualizar solo archivos nuevos o modificados
-Sub ActualizarArchivosNuevos()
+' Función para importar todos los archivos Excel
+Private Function ImportarTodosLosArchivos() As Boolean
     Dim rutaCarpeta As String
     Dim nombreArchivo As String
     Dim rutaCompleta As String
-    Dim fechaArchivo As Date
-    Dim contadorNuevos As Integer
+    Dim contadorExitosos As Integer
+    Dim contadorErrores As Integer
+    Dim totalArchivos As Integer
     
     ' CAMBIAR ESTA RUTA POR LA TUYA
-    rutaCarpeta = "C:\Users\TuUsuario\OneDrive\The Bank of Nova Scotia\Valverde Pacheco, Wilmer Alberto - Sac\"
+    rutaCarpeta = "C:\Users\s493\OneDrive\The Bank of Nova Scotia\Valverde Pacheco, Wilmer Alberto - Sac\"
     
-    contadorNuevos = 0
+    ' Verificar que la carpeta existe
+    If Dir(rutaCarpeta, vbDirectory) = "" Then
+        MsgBox "Error: No se encuentra la carpeta:" & vbCrLf & rutaCarpeta & vbCrLf & vbCrLf & _
+               "Por favor, verifique la ruta en el código.", vbCritical
+        ImportarTodosLosArchivos = False
+        Exit Function
+    End If
     
-    ' Buscar archivos Excel
+    contadorExitosos = 0
+    contadorErrores = 0
+    
+    ' Buscar archivos Excel con el patrón específico
+    nombreArchivo = Dir(rutaCarpeta & "Vista_Reclamos_*.xlsx")
+    
+    If nombreArchivo = "" Then
+        MsgBox "No se encontraron archivos Excel con el patrón 'Vista_Reclamos_*.xlsx'" & vbCrLf & _
+               "en la carpeta:" & vbCrLf & rutaCarpeta, vbExclamation
+        ImportarTodosLosArchivos = False
+        Exit Function
+    End If
+    
+    ' Procesar cada archivo encontrado
+    Do While nombreArchivo <> ""
+        totalArchivos = totalArchivos + 1
+        rutaCompleta = rutaCarpeta & nombreArchivo
+        
+        Debug.Print "Procesando: " & nombreArchivo & "..."
+        
+        If ImportarArchivoExcel(rutaCompleta, nombreArchivo) Then
+            contadorExitosos = contadorExitosos + 1
+            Debug.Print "  ✓ Importado exitosamente"
+        Else
+            contadorErrores = contadorErrores + 1
+            Debug.Print "  ✗ Error en la importación"
+        End If
+        
+        ' Buscar siguiente archivo
+        nombreArchivo = Dir()
+        DoEvents ' Permitir que Windows responda
+    Loop
+    
+    ' Mostrar resumen
+    Debug.Print "=== RESUMEN DE IMPORTACIÓN ==="
+    Debug.Print "Archivos encontrados: " & totalArchivos
+    Debug.Print "Importados exitosamente: " & contadorExitosos
+    Debug.Print "Con errores: " & contadorErrores
+    
+    ImportarTodosLosArchivos = (contadorExitosos > 0)
+End Function
+
+' Función para importar un archivo Excel específico
+Private Function ImportarArchivoExcel(rutaArchivo As String, nombreArchivo As String) As Boolean
+    On Error GoTo ErrorHandler
+    
+    Dim tablaTemporal As String
+    Dim hojaExcel As String
+    
+    ' Generar nombre único para tabla temporal
+    tablaTemporal = "Temp_Import_" & Format(Now(), "hhmmss") & "_" & Int(Rnd() * 1000)
+    hojaExcel = "Hoja1!" ' Primera hoja del Excel
+    
+    ' Paso 1: Importar Excel a tabla temporal
+    DoCmd.TransferSpreadsheet acImport, acSpreadsheetTypeExcel12Xml, _
+                              tablaTemporal, rutaArchivo, True, hojaExcel
+    
+    ' Verificar que se importaron datos
+    If DCount("*", tablaTemporal) = 0 Then
+        Debug.Print "  ⚠ Advertencia: " & nombreArchivo & " parece estar vacío"
+        GoTo Cleanup
+    End If
+    
+    ' Paso 2: Insertar datos en tabla principal
+    Dim sqlInsert As String
+    sqlInsert = "INSERT INTO Vista_Reclamos_Consolidada " & _
+                "(NUMERO_RECLAMO, FECHA_REGISTRO, CLIENTE, ESTADOWORKFLOW, " & _
+                "RESULTADO, FECHACIERRE, DESCRIPCION, INFORMACION_RESULTADO, " & _
+                "SUPERVISORSOLUCIONADOR, NOMBRESOLUCIONADOR, FAMILIA, " & _
+                "NUMERODOCUMENTO, PRODUCTO, TIPOLOGIA, ARCHIVO_ORIGEN) " & _
+                "SELECT NUMERO_RECLAMO, FECHA_REGISTRO, CLIENTE, ESTADOWORKFLOW, " & _
+                "RESULTADO, FECHACIERRE, DESCRIPCION, INFORMACION_RESULTADO, " & _
+                "SUPERVISORSOLUCIONADOR, NOMBRESOLUCIONADOR, FAMILIA, " & _
+                "NUMERODOCUMENTO, PRODUCTO, TIPOLOGIA, '" & nombreArchivo & "' " & _
+                "FROM [" & tablaTemporal & "]"
+    
+    DoCmd.RunSQL sqlInsert
+    
+    ' Contar registros insertados
+    Dim registrosInsertados As Long
+    registrosInsertados = DCount("*", "Vista_Reclamos_Consolidada", "ARCHIVO_ORIGEN='" & nombreArchivo & "'")
+    Debug.Print "    → Registros insertados: " & registrosInsertados
+    
+Cleanup:
+    ' Limpiar tabla temporal
+    If DCount("*", "MSysObjects", "Name='" & tablaTemporal & "' AND Type=1") > 0 Then
+        DoCmd.DeleteObject acTable, tablaTemporal
+    End If
+    
+    ImportarArchivoExcel = True
+    Exit Function
+    
+ErrorHandler:
+    Debug.Print "  ✗ Error importando " & nombreArchivo & ": " & Err.Description
+    
+    ' Limpiar tabla temporal en caso de error
+    On Error Resume Next
+    If DCount("*", "MSysObjects", "Name='" & tablaTemporal & "' AND Type=1") > 0 Then
+        DoCmd.DeleteObject acTable, tablaTemporal
+    End If
+    On Error GoTo 0
+    
+    ImportarArchivoExcel = False
+End Function
+
+' =============================================================================
+' MACRO ADICIONAL PARA ACTUALIZACIONES (OPCIONAL)
+' =============================================================================
+Sub ActualizarSoloArchivosNuevos()
+    ' Esta función solo importa archivos que no existen en la tabla
+    Debug.Print "=== BUSCANDO ARCHIVOS NUEVOS ==="
+    
+    Dim rutaCarpeta As String
+    Dim nombreArchivo As String
+    Dim rutaCompleta As String
+    Dim contadorNuevos As Integer
+    
+    rutaCarpeta = "C:\Users\s493\OneDrive\The Bank of Nova Scotia\Valverde Pacheco, Wilmer Alberto - Sac\"
+    
+    ' Verificar que la tabla principal existe
+    If DCount("*", "MSysObjects", "Name='Vista_Reclamos_Consolidada' AND Type=1") = 0 Then
+        MsgBox "La tabla principal no existe. Use 'EjecutarTodoEnUno' primero.", vbExclamation
+        Exit Sub
+    End If
+    
     nombreArchivo = Dir(rutaCarpeta & "Vista_Reclamos_*.xlsx")
     
     Do While nombreArchivo <> ""
-        rutaCompleta = rutaCarpeta & nombreArchivo
-        fechaArchivo = FileDateTime(rutaCompleta)
-        
         ' Verificar si el archivo ya fue importado
-        Dim existeArchivo As Integer
-        existeArchivo = DCount("*", "Vista_Reclamos_Consolidada", "ARCHIVO_ORIGEN='" & nombreArchivo & "'")
-        
-        If existeArchivo = 0 Then
+        If DCount("*", "Vista_Reclamos_Consolidada", "ARCHIVO_ORIGEN='" & nombreArchivo & "'") = 0 Then
             Debug.Print "Archivo nuevo encontrado: " & nombreArchivo
+            rutaCompleta = rutaCarpeta & nombreArchivo
             
-            If ImportarExcelAAccess(rutaCompleta, nombreArchivo) Then
+            If ImportarArchivoExcel(rutaCompleta, nombreArchivo) Then
                 contadorNuevos = contadorNuevos + 1
             End If
         End If
