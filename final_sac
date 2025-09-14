@@ -1,0 +1,71 @@
+Option Compare Database
+
+Public Sub ConsolidarArchivosExcel()
+    
+    Dim oFileDialog As Object
+    Dim sFolderPath As String
+    Dim sFileName As String
+    Dim bEsPrimerArchivo As Boolean
+    
+    ' Nombre de la tabla final en Access
+    Const sTablaDestino As String = "DatosConsolidados"
+    
+    ' Abrir el diálogo para seleccionar la carpeta
+    Set oFileDialog = Application.FileDialog(4) ' msoFileDialogFolderPicker
+    
+    With oFileDialog
+        .Title = "Seleccione la carpeta con los archivos Excel a consolidar"
+        If .Show = False Then
+            MsgBox "No se seleccionó ninguna carpeta. El proceso se ha cancelado.", vbExclamation
+            Exit Sub
+        End If
+        sFolderPath = .SelectedItems(1)
+    End With
+    
+    ' Asegurarse de que la ruta de la carpeta termine con una barra invertida
+    If Right(sFolderPath, 1) <> "\" Then sFolderPath = sFolderPath & "\"
+    
+    ' --- Proceso de Importación ---
+    
+    ' Verificar si la tabla de destino ya existe
+    If Not IsNull(DLookup("Name", "MSysObjects", "Name='" & sTablaDestino & "'")) Then
+        If MsgBox("La tabla '" & sTablaDestino & "' ya existe." & vbCrLf & _
+                   "¿Desea eliminarla y volver a crearla con los datos nuevos?", _
+                   vbQuestion + vbYesNo, "Confirmar Reemplazo") = vbNo Then
+            Exit Sub
+        End If
+        DoCmd.DeleteObject acTable, sTablaDestino
+    End If
+    
+    ' Obtener el primer archivo .xlsx de la carpeta
+    sFileName = Dir(sFolderPath & "*.xlsx")
+    bEsPrimerArchivo = True
+    
+    Do While Len(sFileName) > 0
+        Dim sRutaCompleta As String
+        sRutaCompleta = sFolderPath & sFileName
+        
+        ' IMPORTANTE: Asume que tus datos están en una hoja llamada "Hoja1".
+        ' Si tu hoja tiene otro nombre, cámbialo en la línea de abajo.
+        Dim sNombreHoja As String
+        sNombreHoja = "Hoja1"
+        
+        If bEsPrimerArchivo Then
+            ' Para el primer archivo, crea la tabla destino
+            DoCmd.TransferSpreadsheet acImport, , sTablaDestino, sRutaCompleta, True, sNombreHoja & "!"
+            bEsPrimerArchivo = False
+        Else
+            ' Para los siguientes archivos, importa a una tabla temporal y luego anexa
+            DoCmd.TransferSpreadsheet acImport, , "TempTableForImport", sRutaCompleta, True, sNombreHoja & "!"
+            DoCmd.RunSQL "INSERT INTO [" & sTablaDestino & "] SELECT * FROM [TempTableForImport];"
+            DoCmd.DeleteObject acTable, "TempTableForImport"
+        End If
+        
+        ' Pasar al siguiente archivo
+        sFileName = Dir()
+    Loop
+    
+    MsgBox "¡Proceso finalizado!" & vbCrLf & "Se han consolidado todos los archivos en la tabla '" & sTablaDestino & "'.", vbInformation
+
+End Sub
+
