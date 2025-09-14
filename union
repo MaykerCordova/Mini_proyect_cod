@@ -1,0 +1,12 @@
+SELECT * INTO NuevaTabla
+FROM (
+    SELECT * FROM [2021]
+    UNION ALL
+    SELECT * FROM [2022]
+    UNION ALL
+    SELECT * FROM [2023]
+    UNION ALL
+    SELECT * FROM [2024]
+    UNION ALL
+    SELECT * FROM [2025]
+) AS CombinedData;
