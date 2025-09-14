@@ -1,0 +1,3 @@
+if Time.Hour([HoraExtraida]) >= 17 then "Noche"
+else if Time.Hour([HoraExtraida]) >= 0 and Time.Hour([HoraExtraida]) < 6 then "Madrugada"
+else "Día"
