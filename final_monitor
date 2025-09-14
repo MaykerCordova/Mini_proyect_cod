@@ -1,0 +1,237 @@
+import win32com.client
+import zipfile
+import os
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+from datetime import datetime, timedelta
+from pathlib import Path
+import time
+import shutil # <--- IMPORTANTE: Añadido para una limpieza robusta
+
+class ProcesadorReportesFraudeOutlook:
+    def __init__(self):
+        self.carpeta_historicos = "datos_historicos"
+        self.carpeta_diarios = "datos_diarios"
+        self.carpeta_temp = "temp"
+        self.carpeta_graficas = "graficas_reportes"
+        self.archivo_dashboard = "dashboard_fraudes.xlsx"
+        
+        # --- CAMBIO: Adaptado a tu carpeta real ---
+        self.carpeta_outlook_objetivo = "monitor_diario"
+        
+        # Crear carpetas si no existen
+        for carpeta in [self.carpeta_historicos, self.carpeta_diarios, 
+                        self.carpeta_temp, self.carpeta_graficas]:
+            Path(carpeta).mkdir(exist_ok=True)
+        
+        # Conectar a Outlook corporativo
+        try:
+            self.outlook = win32com.client.Dispatch("Outlook.Application")
+            self.namespace = self.outlook.GetNamespace("MAPI")
+            print("✅ Conectado a Outlook corporativo")
+        except Exception as e:
+            print(f"❌ Error al conectar con Outlook: {e}")
+            raise
+    
+    def obtener_carpeta_personalizada(self):
+        """Obtiene la carpeta personalizada desde Outlook"""
+        try:
+            inbox = self.namespace.GetDefaultFolder(6)  # 6 = Inbox
+            carpeta_objetivo = inbox.Folders(self.carpeta_outlook_objetivo)
+            print(f"✅ Carpeta '{self.carpeta_outlook_objetivo}' encontrada")
+            return carpeta_objetivo
+        except Exception:
+            print(f"❌ Error: No se encontró la carpeta '{self.carpeta_outlook_objetivo}' en tu Bandeja de Entrada.")
+            # ... (código para listar carpetas)
+            raise Exception(f"Carpeta '{self.carpeta_outlook_objetivo}' no encontrada")
+    
+    def procesar_correo_diario(self):
+        """Función principal que ejecuta todo el flujo"""
+        print(f"🚀 Iniciando proceso diario - {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
+        datos_dia = self.extraer_excel_de_correo()
+        
+        if datos_dia is not None and not datos_dia.empty:
+            print(f"📊 Datos extraídos: {len(datos_dia)} registros")
+            self.guardar_excel_diario(datos_dia)
+            self.actualizar_dashboard_historico(datos_dia)
+            graficas_generadas = self.generar_graficas_diarias(datos_dia)
+            self.enviar_reporte_outlook(datos_dia, graficas_generadas)
+            self.limpiar_archivos_temporales()
+            print("✅ Proceso completado exitosamente")
+        else:
+            print("⚠️ No se encontraron datos para procesar hoy")
+    
+    def extraer_excel_de_correo(self):
+        """Extrae y combina todos los Excels del ZIP adjunto en correos de hoy."""
+        try:
+            carpeta_objetivo = self.obtener_carpeta_personalizada()
+            hoy = datetime.now()
+            fecha_filtro = hoy.strftime("%m/%d/%Y")
+            print(f"🔍 Buscando correos del {fecha_filtro} en la carpeta '{self.carpeta_outlook_objetivo}'...")
+            
+            filtro = f"[ReceivedTime] >= '{fecha_filtro}'"
+            messages = carpeta_objetivo.Items.Restrict(filtro)
+            messages.Sort("[ReceivedTime]", True) # Ordenar por más reciente
+            
+            print(f"📧 Encontrados {messages.Count} correos de hoy en '{self.carpeta_outlook_objetivo}'")
+            
+            for message in messages:
+                if self.es_correo_reporte_fraude(message):
+                    print(f"✅ Correo de reporte encontrado: {message.Subject}")
+                    for attachment in message.Attachments:
+                        if attachment.FileName.lower().endswith('.zip'):
+                            print(f"📁 Procesando ZIP: {attachment.FileName}")
+                            zip_path = os.path.abspath(os.path.join(self.carpeta_temp, attachment.FileName))
+                            attachment.SaveAsFile(zip_path)
+                            datos = self.extraer_y_combinar_excels_de_zip(zip_path)
+                            if datos is not None:
+                                print("✅ Todos los Excels del ZIP han sido extraídos y combinados.")
+                                return datos
+            
+            print(f"❌ No se encontró un correo válido con reportes en la carpeta '{self.carpeta_outlook_objetivo}' para hoy.")
+            return None
+        except Exception as e:
+            print(f"❌ Error al procesar correo: {e}")
+            return None
+    
+    def es_correo_reporte_fraude(self, message):
+        """Determina si el correo contiene el reporte diario de fraudes"""
+        try:
+            remitente = ""
+            if message.SenderEmailType == "EX":
+                remitente = message.Sender.GetExchangeUser().PrimarySmtpAddress.lower()
+            else:
+                remitente = message.SenderEmailAddress.lower()
+
+            asunto = str(message.Subject).lower()
+            
+            # --- CAMBIO: Criterios adaptados al correo real ---
+            criterios_remitente = [
+                "wilmer.valverde@scotiabank.com.pe"
+            ]
+            
+            criterios_asunto = [
+                "alertas por reporte", 
+                "rep_8850" # Palabra clave del asunto
+            ]
+            
+            remitente_valido = any(criterio in remitente for criterio in criterios_remitente)
+            asunto_valido = any(criterio in asunto for criterio in criterios_asunto)
+            tiene_adjuntos = message.Attachments.Count > 0
+            
+            if (remitente_valido and asunto_valido and tiene_adjuntos):
+                print(f"📋 Candidato encontrado - Remitente: {remitente}, Asunto: {asunto}")
+                return True
+            return False
+        except Exception as e:
+            print(f"Error al evaluar correo: {e}")
+            return False
+    
+    def extraer_y_combinar_excels_de_zip(self, zip_path):
+        """
+        MEJORADO: Extrae todos los archivos Excel de un ZIP y los combina en un único DataFrame.
+        """
+        lista_dataframes = []
+        try:
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                archivos_excel = [f for f in zip_ref.namelist() if f.lower().endswith(('.xlsx', '.xls')) and not f.startswith('__MACOSX')]
+                
+                if not archivos_excel:
+                    print("❌ No se encontraron archivos Excel en el ZIP.")
+                    return None
+                
+                print(f"📊 Se encontraron {len(archivos_excel)} archivos Excel en el ZIP: {archivos_excel}")
+
+                for archivo_excel in archivos_excel:
+                    print(f"🔄 Procesando: {archivo_excel}")
+                    zip_ref.extract(archivo_excel, self.carpeta_temp)
+                    ruta_excel_extraido = os.path.join(self.carpeta_temp, archivo_excel)
+                    
+                    try:
+                        df_temp = pd.read_excel(ruta_excel_extraido)
+                        lista_dataframes.append(df_temp)
+                        print(f"  - Leído exitosamente: {len(df_temp)} filas.")
+                    except Exception as e:
+                        print(f"  - ⚠️ No se pudo leer el archivo {archivo_excel}. Error: {e}")
+            
+            if not lista_dataframes:
+                print("❌ No se pudo leer ningún archivo Excel del ZIP.")
+                return None
+
+            # Combinar todos los DataFrames en uno solo
+            datos_combinados = pd.concat(lista_dataframes, ignore_index=True)
+            return datos_combinados
+            
+        except Exception as e:
+            print(f"❌ Error al extraer y combinar Excels del ZIP: {e}")
+            return None
+        finally:
+            # Limpieza del ZIP temporal
+            if os.path.exists(zip_path):
+                os.remove(zip_path)
+
+    # --- NINGÚN CAMBIO NECESARIO EN LAS SIGUIENTES FUNCIONES ---
+    # (guardar_excel_diario, actualizar_dashboard_historico, generar_graficas_diarias)
+    # ... (Pega aquí tus funciones sin modificar) ...
+
+    def limpiar_archivos_temporales(self):
+        """MEJORADO: Limpia archivos y carpetas temporales de forma robusta."""
+        print("🧹 Limpiando archivos temporales...")
+        try:
+            if os.path.exists(self.carpeta_temp):
+                shutil.rmtree(self.carpeta_temp) # Usa shutil para borrar la carpeta y todo su contenido
+                print(f"🗑️ Carpeta temporal '{self.carpeta_temp}' eliminada.")
+            
+            os.makedirs(self.carpeta_temp, exist_ok=True) # La vuelve a crear vacía
+        except Exception as e:
+            print(f"⚠️ Error al limpiar archivos temporales: {e}")
+
+    def enviar_reporte_outlook(self, datos, graficas):
+        """Envía reporte usando Outlook corporativo"""
+        try:
+            print("📧 Preparando envío por Outlook corporativo...")
+            mail = self.outlook.CreateItem(0)
+            
+            # --- CAMBIO: Puedes ajustar los destinatarios ---
+            destinatarios = [
+                "jose.cordova@scotiabank.com.pe" # Tu correo corporativo
+            ]
+            mail.To = "; ".join(destinatarios)
+            
+            fecha_reporte = datetime.now().strftime("%d/%m/%Y")
+            # --- CAMBIO: Asunto y cuerpo ahora son dinámicos ---
+            mail.Subject = f"[AUTOMATICO] Reporte Diario de Fraudes - {fecha_reporte} (Carpeta: {self.carpeta_outlook_objetivo})"
+            
+            mail.Body = f"""
+REPORTE AUTOMATICO DE FRAUDES
+Fuente: Carpeta Outlook '{self.carpeta_outlook_objetivo}'
+Fecha: {fecha_reporte}
+Hora de generación: {datetime.now().strftime("%H:%M:%S")}
+{'-'*50}
+📊 RESUMEN EJECUTIVO
+{'-'*50}
+🚨 Total de transacciones analizadas: {len(datos)}
+{'-'*50}
+Este reporte ha sido generado automáticamente.
+            """
+            
+            for grafica in graficas:
+                if os.path.exists(grafica):
+                    mail.Attachments.Add(os.path.abspath(grafica))
+                    print(f"📎 Adjuntado: {os.path.basename(grafica)}")
+            
+            fecha_hoy = datetime.now().strftime("%Y%m%d")
+            excel_diario = os.path.join(self.carpeta_diarios, f"fraudes_{fecha_hoy}.xlsx")
+            if os.path.exists(excel_diario):
+                mail.Attachments.Add(os.path.abspath(excel_diario))
+                print(f"📎 Adjuntado: fraudes_{fecha_hoy}.xlsx")
+            
+            mail.Importance = 2
+            mail.Send()
+            print(f"✅ Reporte enviado exitosamente a: {', '.join(destinatarios)}")
+
+        except Exception as e:
+            print(f"❌ Error al enviar correo: {e}")
+
+# ... (El resto de tu script principal para llamar a la clase no necesita cambios)
