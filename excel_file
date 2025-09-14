@@ -1,0 +1,65 @@
+Option Compare Database
+Option Explicit
+
+Public Sub ImportarExcelGrande_Vinculando()
+
+    ' --- Configuración ---
+    Dim sRutaArchivoExcel As String
+    Const sTablaDestino As String = "DatosConsolididados" ' La tabla que creaste en Access
+    Const sNombreHoja As String = "Hoja1" ' ¡IMPORTANTE! Cambia esto si tu hoja tiene otro nombre
+    Const sTablaVinculadaTemp As String = "ExcelVinculado_Temp" ' Nombre para el enlace temporal
+
+    ' --- Variables para el manejo de errores ---
+    Dim gestionErrores As Boolean
+    gestionErrores = True
+
+    On Error GoTo ManejadorDeErrores
+
+    ' --- 1. Permitir al usuario seleccionar el archivo Excel ---
+    With Application.FileDialog(3) ' msoFileDialogFilePicker
+        .Title = "Por favor, seleccione el archivo Excel a importar"
+        .AllowMultiSelect = False
+        .Filters.Clear
+        .Filters.Add "Archivos de Excel", "*.xlsx; *.xls"
+        
+        If .Show = True Then
+            sRutaArchivoExcel = .SelectedItems(1)
+        Else
+            MsgBox "Proceso cancelado por el usuario.", vbInformation
+            Exit Sub
+        End If
+    End With
+
+    ' --- 2. Vincular el archivo de Excel como una tabla temporal ---
+    ' Este paso es casi instantáneo porque no mueve datos.
+    DoCmd.TransferSpreadsheet acLink, acSpreadsheetTypeExcel12Xml, sTablaVinculadaTemp, sRutaArchivoExcel, True, sNombreHoja & "!"
+    
+    ' --- 3. Anexar los datos desde la tabla vinculada a la tabla destino ---
+    ' Este es el paso donde Access usa su motor para hacer la transferencia de datos de forma eficiente.
+    DoCmd.SetWarnings False ' Desactiva los mensajes de confirmación de Access
+    DoCmd.RunSQL "INSERT INTO [" & sTablaDestino & "] SELECT * FROM [" & sTablaVinculadaTemp & "];"
+    DoCmd.SetWarnings True ' Reactiva los mensajes
+    
+    gestionErrores = False ' Desactiva el manejador de errores si todo salió bien
+
+Finalizar:
+    ' --- 4. Limpiar: Eliminar la tabla vinculada temporal ---
+    On Error Resume Next ' Si la tabla no se pudo crear, no dará error al intentar borrarla
+    DoCmd.SetWarnings False
+    DoCmd.DeleteObject acTable, sTablaVinculadaTemp
+    DoCmd.SetWarnings True
+    On Error GoTo 0
+    
+    If Not gestionErrores Then
+        MsgBox "¡Importación completada con éxito!" & vbCrLf & "Los datos del archivo '" & sRutaArchivoExcel & "' se han agregado a la tabla '" & sTablaDestino & "'.", vbInformation
+    End If
+    
+    Exit Sub
+
+ManejadorDeErrores:
+    MsgBox "Se ha producido un error:" & vbCrLf & _
+           "Número de Error: " & Err.Number & vbCrLf & _
+           "Descripción: " & Err.Description, vbCritical, "Error en la Importación"
+    Resume Finalizar ' Salta a la sección de limpieza incluso si hay un error
+
+End Sub
