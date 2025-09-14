@@ -1,0 +1,61 @@
+Option Compare Database
+Option Explicit ' Obliga a declarar todas las variables, es una buena práctica
+
+Public Sub CrearTablaDestino_SinPK()
+
+    ' --- Declaración de variables DAO ---
+    Dim db As DAO.Database
+    Dim tdf As DAO.TableDef
+    
+    ' --- Nombre de la tabla que se va a crear ---
+    Const NOMBRE_TABLA As String = "DatosConsolidados"
+    
+    ' --- Inicializar la base de datos actual ---
+    Set db = CurrentDb()
+    
+    ' --- Manejo de la tabla si ya existe ---
+    ' Esto borra la tabla si existe para evitar errores.
+    On Error Resume Next
+    db.TableDefs.Delete NOMBRE_TABLA
+    On Error GoTo 0
+    
+    ' --- Crear la definición de la nueva tabla ---
+    Set tdf = db.CreateTableDef(NOMBRE_TABLA)
+    
+    ' --- Crear cada campo (field) y añadirlo a la tabla ---
+    
+    ' 1. Campos de Texto con tamaño optimizado
+    tdf.Fields.Append tdf.CreateField("NUMERO_RECLAMO", dbText, 50)
+    tdf.Fields.Append tdf.CreateField("ESTADOWORKFLOW", dbText, 100)
+    tdf.Fields.Append tdf.CreateField("FAMILIA", dbText, 100)
+    tdf.Fields.Append tdf.CreateField("NUMERODOCUMENTO", dbText, 50)
+    tdf.Fields.Append tdf.CreateField("ARCHIVO_ORIGEN", dbText, 100)
+    
+    ' 2. Campos de Fecha/Hora
+    tdf.Fields.Append tdf.CreateField("FECHA_REGISTRO", dbDate)
+    tdf.Fields.Append tdf.CreateField("FECHACIERRE", dbDate)
+    tdf.Fields.Append tdf.CreateField("FECHA_IMPORTACION", dbDate)
+
+    ' 3. Campos de Texto Largo (Memo) para descripciones extensas
+    tdf.Fields.Append tdf.CreateField("DESCRIPCION", dbMemo)
+    tdf.Fields.Append tdf.CreateField("INFORMACION_RESULTADO", dbMemo)
+    
+    ' 4. ¡OPTIMIZACIÓN IMPORTANTE! Campos de texto que estaban en 255
+    ' Ajusta el tamaño a un número más realista para evitar errores.
+    tdf.Fields.Append tdf.CreateField("CLIENTE", dbText, 255)
+    tdf.Fields.Append tdf.CreateField("RESULTADO", dbText, 255)
+    tdf.Fields.Append tdf.CreateField("SUPERVISORSOLUCIONADOR", dbText, 255)
+    tdf.Fields.Append tdf.CreateField("NOMBRESOLUCIONADOR", dbText, 255)
+    tdf.Fields.Append tdf.CreateField("PRODUCTO", dbText, 255)
+    tdf.Fields.Append tdf.CreateField("TIPOLOGIA", dbText, 255)
+
+    ' --- Añadir la nueva tabla a la base de datos ---
+    db.TableDefs.Append tdf
+    
+    ' --- Limpiar variables ---
+    Set tdf = Nothing
+    Set db = Nothing
+    
+    MsgBox "¡La tabla '" & NOMBRE_TABLA & "' se ha creado correctamente SIN clave principal!", vbInformation
+
+End Sub
