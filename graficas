@@ -1,0 +1,101 @@
+def generar_graficas_diarias(self, datos):
+        """
+        NUEVA VERSIÓN: Genera un conjunto de gráficas estilo dashboard basadas en los datos del día.
+        """
+        graficas_generadas = []
+        fecha_hoy_str = datetime.now().strftime("%Y%m%d")
+        fecha_reporte = datetime.now().strftime("%d/%m/%Y")
+        
+        # --- Configuración de estilo para las gráficas ---
+        sns.set_style("whitegrid")
+        plt.rcParams.update({
+            'font.size': 10,
+            'figure.figsize': (14, 9),
+            'axes.labelweight': 'bold',
+            'axes.titleweight': 'bold'
+        })
+        
+        print("📈 Generando gráficas estilo dashboard...")
+        
+        # --- !! IMPORTANTE !! ---
+        ### AJUSTA ESTOS NOMBRES DE COLUMNA PARA QUE COINCIDAN EXACTAMENTE CON TU EXCEL ###
+        col_comercio = "ACF-Nombre/Localización Comercio"
+        col_resultado = "ACF-Tipo de Resultado Caso de Investigacion"
+        col_hora = "ACF-Hora TRX"
+        
+        # --- Gráfica 1: Top 20 Comercios con más Transacciones ---
+        if col_comercio in datos.columns:
+            try:
+                plt.figure() # Crea una nueva figura
+                top_20_comercios = datos[col_comercio].value_counts().head(20)
+                sns.barplot(y=top_20_comercios.index, x=top_20_comercios.values, palette='viridis')
+                
+                plt.title(f'Top 20 Comercios con más Transacciones - {fecha_reporte}')
+                plt.xlabel('Cantidad de Transacciones')
+                plt.ylabel('Comercio')
+                plt.tight_layout()
+                
+                ruta_grafica = os.path.join(self.carpeta_graficas, f"top_20_comercios_{fecha_hoy_str}.png")
+                plt.savefig(ruta_grafica, dpi=150)
+                graficas_generadas.append(ruta_grafica)
+                plt.close()
+                print("  ✅ Gráfica 'Top 20 Comercios' generada.")
+            except Exception as e:
+                print(f"  ❌ Error al generar gráfica de Comercios: {e}")
+
+        # --- Gráfica 2: Top 20 Resultados de Investigación ---
+        if col_resultado in datos.columns:
+            try:
+                plt.figure()
+                top_20_resultados = datos[col_resultado].value_counts().head(20)
+                sns.barplot(y=top_20_resultados.index, x=top_20_resultados.values, palette='coolwarm')
+                
+                plt.title(f'Top 20 Resultados de Investigación - {fecha_reporte}')
+                plt.xlabel('Cantidad de Casos')
+                plt.ylabel('Tipo de Resultado')
+                plt.tight_layout()
+                
+                ruta_grafica = os.path.join(self.carpeta_graficas, f"top_20_resultados_{fecha_hoy_str}.png")
+                plt.savefig(ruta_grafica, dpi=150)
+                graficas_generadas.append(ruta_grafica)
+                plt.close()
+                print("  ✅ Gráfica 'Top 20 Resultados' generada.")
+            except Exception as e:
+                print(f"  ❌ Error al generar gráfica de Resultados: {e}")
+
+        # --- Gráfica 3: Distribución de Transacciones por Hora (Segmentada) ---
+        if col_hora in datos.columns:
+            try:
+                # Preparar datos de hora
+                # Convertimos a formato de hora y extraemos la hora numérica
+                datos['Hora_Numerica'] = pd.to_datetime(datos[col_hora], errors='coerce').dt.hour
+                transacciones_por_hora = datos['Hora_Numerica'].value_counts().sort_index()
+                
+                fig, ax = plt.subplots() # Necesitamos 'ax' para los fondos de color
+                
+                # Dibujar la línea de transacciones
+                transacciones_por_hora.plot(kind='line', ax=ax, marker='o', color='black', zorder=3)
+                
+                # Colorear los segmentos del día
+                ax.axvspan(0, 5.9, color='#1f77b4', alpha=0.2, label='Madrugada (00:00-05:59)')
+                ax.axvspan(6, 16.9, color='#ff7f0e', alpha=0.2, label='Día (06:00-16:59)')
+                ax.axvspan(17, 23.9, color='#d62728', alpha=0.2, label='Noche (17:00-23:59)')
+                
+                ax.set_title(f'Distribución de Transacciones por Hora - {fecha_reporte}')
+                ax.set_xlabel('Hora del Día')
+                ax.set_ylabel('Cantidad de Transacciones')
+                ax.set_xticks(range(0, 24))
+                ax.grid(True, which='both', linestyle='--', linewidth=0.5)
+                ax.legend(title='Segmento Horario')
+                plt.tight_layout()
+                
+                ruta_grafica = os.path.join(self.carpeta_graficas, f"distribucion_horaria_{fecha_hoy_str}.png")
+                plt.savefig(ruta_grafica, dpi=150)
+                graficas_generadas.append(ruta_grafica)
+                plt.close()
+                print("  ✅ Gráfica 'Distribución Horaria Segmentada' generada.")
+            except Exception as e:
+                print(f"  ❌ Error al generar gráfica de Horas: {e}")
+        
+        print(f"✅ Se generaron {len(graficas_generadas)} gráficas.")
+        return graficas_generadas
