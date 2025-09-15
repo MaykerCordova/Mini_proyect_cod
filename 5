@@ -1,277 +1,395 @@
-Sub CargarExcelGrandeAAccess()
-    
-    Dim db As DAO.Database
-    Dim rs As DAO.Recordset
-    Dim xlApp As Object
-    Dim xlWorkbook As Object
-    Dim xlWorksheet As Object
-    Dim fd As FileDialog
-    Dim strFilePath As String
-    Dim strTableName As String
-    Dim lastRow As Long
-    Dim lastCol As Long
-    Dim i As Long, j As Long
-    Dim fieldNames As String
-    Dim fieldTypes As String
-    Dim sqlCreate As String
-    Dim sqlInsert As String
-    Dim startTime As Double
-    Dim batchSize As Long
-    Dim currentBatch As Long
-    
-    ' Configuraciones
-    batchSize = 1000 ' Procesar en lotes de 1000 registros
-    strTableName = "TablaExcelImportada"
-    
-    startTime = Timer
-    
-    ' Mostrar diálogo para seleccionar archivo Excel
-    Set fd = Application.FileDialog(msoFileDialogFilePicker)
-    With fd
-        .Title = "Seleccionar archivo Excel"
-        .Filters.Clear
-        .Filters.Add "Archivos Excel", "*.xlsx;*.xls;*.xlsm"
-        .AllowMultiSelect = False
-        
-        If .Show = -1 Then
-            strFilePath = .SelectedItems(1)
-        Else
-            MsgBox "No se seleccionó ningún archivo.", vbInformation
-            Exit Sub
-        End If
-    End With
-    
-    On Error GoTo ErrorHandler
-    
-    ' Mostrar progreso inicial
-    DoCmd.Hourglass True
-    Debug.Print "Iniciando carga del archivo: " & strFilePath
-    Debug.Print "Hora de inicio: " & Now()
-    
-    ' Abrir conexión a la base de datos actual
-    Set db = CurrentDb()
-    
-    ' Eliminar tabla si existe
-    On Error Resume Next
-    DoCmd.DeleteObject acTable, strTableName
-    On Error GoTo ErrorHandler
-    
-    ' Crear aplicación Excel
-    Set xlApp = CreateObject("Excel.Application")
-    xlApp.Visible = False
-    xlApp.DisplayAlerts = False
-    xlApp.ScreenUpdating = False
-    xlApp.Calculation = -4135 ' xlCalculationManual
-    
-    Debug.Print "Abriendo archivo Excel..."
-    
-    ' Abrir el archivo Excel
-    Set xlWorkbook = xlApp.Workbooks.Open(strFilePath, False, True) ' ReadOnly = True
-    Set xlWorksheet = xlWorkbook.Worksheets(1) ' Primera hoja
-    
-    ' Encontrar la última fila y columna con datos
-    lastRow = xlWorksheet.Cells(xlWorksheet.Rows.Count, 1).End(-4162).Row ' xlUp
-    lastCol = xlWorksheet.Cells(1, xlWorksheet.Columns.Count).End(-4159).Column ' xlToLeft
-    
-    Debug.Print "Dimensiones encontradas - Filas: " & lastRow & ", Columnas: " & lastCol
-    
-    ' Construir nombres de campos y tipos
-    fieldNames = ""
-    fieldTypes = ""
-    
-    For j = 1 To lastCol
-        Dim fieldName As String
-        Dim cellValue As Variant
-        
-        ' Obtener nombre del campo (primera fila)
-        cellValue = xlWorksheet.Cells(1, j).Value
-        
-        If IsNull(cellValue) Or cellValue = "" Then
-            fieldName = "Campo" & j
-        Else
-            ' Limpiar nombre del campo
-            fieldName = Replace(Replace(Replace(CStr(cellValue), " ", "_"), ".", "_"), "-", "_")
-            fieldName = Replace(Replace(Replace(fieldName, "(", ""), ")", ""), "/", "_")
-            fieldName = Replace(Replace(Replace(fieldName, "+", "_"), "*", "_"), "=", "_")
-            ' Asegurar que no comience con número
-            If IsNumeric(Left(fieldName, 1)) Then
-                fieldName = "F_" & fieldName
-            End If
-            ' Limitar longitud
-            If Len(fieldName) > 64 Then
-                fieldName = Left(fieldName, 64)
-            End If
-        End If
-        
-        fieldNames = fieldNames & "[" & fieldName & "]"
-        fieldTypes = fieldTypes & "[" & fieldName & "] TEXT(255)"
-        
-        If j < lastCol Then
-            fieldNames = fieldNames & ", "
-            fieldTypes = fieldTypes & ", "
-        End If
-    Next j
-    
-    ' Crear la tabla
-    sqlCreate = "CREATE TABLE [" & strTableName & "] (ID AUTOINCREMENT PRIMARY KEY, " & fieldTypes & ")"
-    
-    Debug.Print "Creando tabla..."
-    db.Execute sqlCreate
-    
-    ' Preparar inserción por lotes
-    Debug.Print "Iniciando inserción de datos..."
-    
-    ' Abrir recordset para inserción
-    Set rs = db.OpenRecordset("SELECT * FROM [" & strTableName & "]", dbOpenDynaset)
-    
-    ' Procesar datos por lotes
-    For i = 2 To lastRow Step batchSize
-        Dim endRow As Long
-        endRow = i + batchSize - 1
-        If endRow > lastRow Then endRow = lastRow
-        
-        Debug.Print "Procesando filas " & i & " a " & endRow & " de " & lastRow
-        
-        ' Usar transacción para mejorar rendimiento
-        db.BeginTrans
-        
-        Dim rowIndex As Long
-        For rowIndex = i To endRow
-            rs.AddNew
-            
-            For j = 1 To lastCol
-                Dim value As Variant
-                value = xlWorksheet.Cells(rowIndex, j).Value
-                
-                ' Manejar valores nulos y convertir a texto si es necesario
-                If IsNull(value) Or IsEmpty(value) Then
-                    rs.Fields(j).Value = Null
-                Else
-                    ' Convertir a texto y limitar longitud
-                    Dim textValue As String
-                    textValue = CStr(value)
-                    If Len(textValue) > 255 Then
-                        textValue = Left(textValue, 255)
-                    End If
-                    rs.Fields(j).Value = textValue
-                End If
-            Next j
-            
-            rs.Update
-        Next rowIndex
-        
-        db.CommitTrans
-        
-        ' Mostrar progreso
-        DoCmd.Echo True, "Procesando... " & Format((endRow / lastRow) * 100, "0.0") & "% completado"
-        DoEvents
-    Next i
-    
-    rs.Close
-    
-    ' Cerrar Excel
-    xlWorkbook.Close False
-    xlApp.Quit
-    Set xlWorksheet = Nothing
-    Set xlWorkbook = Nothing
-    Set xlApp = Nothing
-    
-    ' Cerrar base de datos
-    db.Close
-    Set db = Nothing
-    
-    DoCmd.Hourglass False
-    DoCmd.Echo True, ""
-    
-    Dim totalTime As Double
-    totalTime = Timer - startTime
-    
-    ' Mostrar resumen
-    MsgBox "¡Importación completada exitosamente!" & vbCrLf & _
-           "Tabla creada: " & strTableName & vbCrLf & _
-           "Registros procesados: " & (lastRow - 1) & vbCrLf & _
-           "Columnas: " & lastCol & vbCrLf & _
-           "Tiempo total: " & Format(totalTime / 60, "0.0") & " minutos", _
-           vbInformation, "Importación Completada"
-    
-    Debug.Print "Importación completada en " & Format(totalTime, "0.0") & " segundos"
-    
-    Exit Sub
-    
-ErrorHandler:
-    ' Limpiar objetos en caso de error
-    DoCmd.Hourglass False
-    DoCmd.Echo True, ""
-    
-    If Not rs Is Nothing Then rs.Close
-    If Not db Is Nothing Then
-        db.Rollback
-        db.Close
-    End If
-    
-    If Not xlWorkbook Is Nothing Then xlWorkbook.Close False
-    If Not xlApp Is Nothing Then xlApp.Quit
-    
-    Set rs = Nothing
-    Set db = Nothing
-    Set xlWorksheet = Nothing
-    Set xlWorkbook = Nothing
-    Set xlApp = Nothing
-    
-    MsgBox "Error durante la importación: " & Err.Number & " - " & Err.Description, _
-           vbCritical, "Error"
-    
-    Debug.Print "Error: " & Err.Number & " - " & Err.Description
-End Sub
+import win32com.client
+import zipfile
+import os
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+from datetime import datetime, timedelta
+from pathlib import Path
+import time
 
-' Función auxiliar para optimizar la importación de archivos muy grandes
-Sub CargarExcelGrandeMejorado()
-    ' Esta versión usa el método TransferSpreadsheet como alternativa más rápida
-    ' pero con menos control sobre el proceso
-    
-    Dim fd As FileDialog
-    Dim strFilePath As String
-    Dim strTableName As String
-    
-    strTableName = "TablaExcelImportada_Rapido"
-    
-    ' Seleccionar archivo
-    Set fd = Application.FileDialog(msoFileDialogFilePicker)
-    With fd
-        .Title = "Seleccionar archivo Excel (Método Rápido)"
-        .Filters.Clear
-        .Filters.Add "Archivos Excel", "*.xlsx;*.xls;*.xlsm"
-        .AllowMultiSelect = False
+class ProcesadorReportesFraudeOutlook:
+    def __init__(self):
+        self.carpeta_historicos = "datos_historicos"
+        self.carpeta_diarios = "datos_diarios"
+        self.carpeta_temp = "temp"
+        self.carpeta_graficas = "graficas_reportes"
+        self.archivo_dashboard = "dashboard_fraudes.xlsx"
         
-        If .Show = -1 Then
-            strFilePath = .SelectedItems(1)
-        Else
-            MsgBox "No se seleccionó ningún archivo.", vbInformation
-            Exit Sub
-        End If
-    End With
+        # Nombre de la carpeta personalizada en Outlook (respeta espacios)
+        self.carpeta_outlook_objetivo = "prueba trx" 
+        
+        # Crear carpetas si no existen
+        for carpeta in [self.carpeta_historicos, self.carpeta_diarios, 
+                        self.carpeta_temp, self.carpeta_graficas]:
+            Path(carpeta).mkdir(exist_ok=True)
+        
+        # Conectar a Outlook corporativo
+        try:
+            self.outlook = win32com.client.Dispatch("Outlook.Application")
+            self.namespace = self.outlook.GetNamespace("MAPI")
+            print("✅ Conectado a Outlook corporativo")
+        except Exception as e:
+            print(f"❌ Error al conectar con Outlook: {e}")
+            raise
     
-    On Error GoTo ErrorHandler2
+    def obtener_carpeta_personalizada(self):
+        """Obtiene la carpeta personalizada desde Outlook"""
+        try:
+            inbox = self.namespace.GetDefaultFolder(6)  # 6 = Inbox
+            carpeta_objetivo = inbox.Folders(self.carpeta_outlook_objetivo)
+            print(f"✅ Carpeta '{self.carpeta_outlook_objetivo}' encontrada")
+            return carpeta_objetivo
+        except Exception as e:
+            print(f"❌ Error: No se encontró la carpeta '{self.carpeta_outlook_objetivo}' en Outlook")
+            print("📁 Carpetas disponibles en Inbox:")
+            try:
+                inbox = self.namespace.GetDefaultFolder(6)
+                for subcarpeta in inbox.Folders:
+                    print(f"  - {subcarpeta.Name}")
+                print("\n📁 Buzones principales:")
+                for buzones in self.namespace.Folders:
+                    print(f"  - {buzones.Name}")
+            except Exception as list_error:
+                print(f"Error al listar carpetas: {list_error}")
+            raise Exception(f"Carpeta '{self.carpeta_outlook_objetivo}' no encontrada")
     
-    ' Eliminar tabla si existe
-    On Error Resume Next
-    DoCmd.DeleteObject acTable, strTableName
-    On Error GoTo ErrorHandler2
+    def procesar_correo_diario(self):
+        """Función principal que ejecuta todo el flujo"""
+        print(f"🚀 Iniciando proceso diario - {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
+        datos_dia = self.extraer_excel_de_correo()
+        
+        if datos_dia is not None:
+            print(f"📊 Datos extraídos: {len(datos_dia)} registros")
+            self.guardar_excel_diario(datos_dia)
+            self.actualizar_dashboard_historico(datos_dia)
+            graficas_generadas = self.generar_graficas_diarias(datos_dia)
+            self.enviar_reporte_outlook(datos_dia, graficas_generadas)
+            self.limpiar_archivos_temporales()
+            print("✅ Proceso completado exitosamente")
+        else:
+            print("⚠️ No se encontraron datos para procesar hoy")
     
-    DoCmd.Hourglass True
+    def extraer_excel_de_correo(self):
+        """Extrae Excel del ZIP adjunto en correos de hoy desde la carpeta personalizada"""
+        try:
+            carpeta_objetivo = self.obtener_carpeta_personalizada()
+            hoy = datetime.now()
+            fecha_filtro = hoy.strftime("%m/%d/%Y")
+            print(f"🔍 Buscando correos del {fecha_filtro} en la carpeta '{self.carpeta_outlook_objetivo}'...")
+            
+            filtro = f"[ReceivedTime] >= '{fecha_filtro}' AND [ReceivedTime] < '{(hoy + timedelta(days=1)).strftime('%m/%d/%Y')}'"
+            messages = carpeta_objetivo.Items.Restrict(filtro)
+            print(f"📧 Encontrados {messages.Count} correos de hoy en '{self.carpeta_outlook_objetivo}'")
+            
+            for message in reversed(list(messages)): # Procesar el más reciente primero
+                if self.es_correo_reporte_fraude(message):
+                    print(f"✅ Correo de reporte encontrado: {message.Subject}")
+                    for attachment in message.Attachments:
+                        if attachment.FileName.lower().endswith('.zip'):
+                            print(f"📁 Procesando ZIP: {attachment.FileName}")
+                            zip_path = os.path.abspath(os.path.join(self.carpeta_temp, attachment.FileName))
+                            attachment.SaveAsFile(zip_path)
+                            datos = self.extraer_excel_de_zip(zip_path)
+                            if datos is not None:
+                                print("✅ Excel extraído exitosamente")
+                                return datos
+            
+            print(f"❌ No se encontró correo con ZIP de reportes en la carpeta '{self.carpeta_outlook_objetivo}'")
+            return None
+        except Exception as e:
+            print(f"❌ Error al procesar correo: {e}")
+            return None
     
-    ' Importar usando TransferSpreadsheet (más rápido para archivos grandes)
-    DoCmd.TransferSpreadsheet acImport, acSpreadsheetTypeExcel12Xml, _
-                            strTableName, strFilePath, True
+    def es_correo_reporte_fraude(self, message):
+        """Determina si el correo contiene el reporte diario de fraudes"""
+        try:
+            remitente = str(message.SenderEmailAddress).lower() if message.SenderEmailAddress else ""
+            asunto = str(message.Subject).lower() if message.Subject else ""
+            
+            criterios_remitente = [ "josemayker75@gmail.com" ]
+            criterios_asunto = [ "reporte diario", "fraudes diarios", "prueba trx", "test" ]
+            
+            remitente_valido = any(criterio in remitente for criterio in criterios_remitente)
+            asunto_valido = any(criterio in asunto for criterio in criterios_asunto)
+            tiene_adjuntos = message.Attachments.Count > 0
+            
+            if (remitente_valido or asunto_valido) and tiene_adjuntos:
+                print(f"📋 Candidato encontrado - Remitente: {remitente}, Asunto: {asunto}")
+                return True
+            return False
+        except Exception as e:
+            print(f"Error al evaluar correo: {e}")
+            return False
     
-    DoCmd.Hourglass False
+    def extraer_excel_de_zip(self, zip_path):
+        """Extrae Excel del archivo ZIP"""
+        try:
+            if not os.path.exists(zip_path) or os.path.getsize(zip_path) == 0:
+                print(f"❌ El archivo ZIP no existe o está vacío: {zip_path}")
+                return None
+
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                archivos_excel = [f for f in zip_ref.namelist() if f.lower().endswith(('.xlsx', '.xls'))]
+                if not archivos_excel:
+                    print("❌ No se encontró archivo Excel en el ZIP")
+                    return None
+                
+                archivo_excel = archivos_excel[0]
+                print(f"📊 Procesando Excel: {archivo_excel}")
+                
+                ruta_excel = os.path.abspath(zip_ref.extract(archivo_excel, self.carpeta_temp))
+                datos = pd.read_excel(ruta_excel, engine='openpyxl')
+                os.remove(ruta_excel)
+                
+                print(f"✅ Excel cargado: {len(datos)} filas, {len(datos.columns)} columnas")
+                return datos
+        except zipfile.BadZipFile:
+            print(f"❌ El archivo no es un ZIP válido: {zip_path}")
+            return None
+        except Exception as e:
+            print(f"❌ Error al extraer ZIP: {e}")
+            return None
+        finally:
+            if os.path.exists(zip_path):
+                os.remove(zip_path)
+
+    def guardar_excel_diario(self, datos):
+        """Guarda el Excel del día en la carpeta diarios"""
+        fecha_hoy = datetime.now().strftime("%Y%m%d")
+        nombre_archivo = f"fraudes_{fecha_hoy}.xlsx"
+        ruta_archivo = os.path.join(self.carpeta_diarios, nombre_archivo)
+        datos_con_timestamp = datos.copy()
+        datos_con_timestamp['fecha_procesamiento'] = datetime.now()
+        datos_con_timestamp.to_excel(ruta_archivo, index=False)
+        print(f"💾 Excel diario guardado: {nombre_archivo}")
+        return ruta_archivo
     
-    MsgBox "Importación rápida completada exitosamente!" & vbCrLf & _
-           "Tabla creada: " & strTableName, vbInformation
+    def actualizar_dashboard_historico(self, datos_nuevos):
+        """Actualiza el Excel dashboard con los datos históricos"""
+        ruta_dashboard = os.path.join(self.carpeta_historicos, self.archivo_dashboard)
+        try:
+            if os.path.exists(ruta_dashboard):
+                print("📊 Cargando dashboard histórico...")
+                datos_historicos = pd.read_excel(ruta_dashboard)
+                datos_combinados = pd.concat([datos_historicos, datos_nuevos], ignore_index=True, sort=False)
+            else:
+                print("🆕 Creando nuevo dashboard histórico...")
+                datos_combinados = datos_nuevos
+            
+            datos_combinados.to_excel(ruta_dashboard, index=False)
+            print(f"✅ Dashboard actualizado: {len(datos_combinados)} registros totales")
+        except Exception as e:
+            print(f"❌ Error al actualizar dashboard: {e}")
     
-    Exit Sub
+    def generar_graficas_diarias(self, datos):
+        """Genera gráficas con los datos del día"""
+        graficas_generadas = []
+        fecha_hoy = datetime.now().strftime("%Y%m%d")
+        try:
+            sns.set_style("whitegrid")
+            print("📈 Generando gráficas...")
+            columnas = datos.columns.tolist()
+            
+            col_negocio = next((c for c in columnas if any(k in c.lower() for k in ['negocio', 'comercio', 'tienda'])), None)
+            col_hora = next((c for c in columnas if any(k in c.lower() for k in ['hora', 'time'])), None)
+            col_monto = next((c for c in columnas if any(k in c.lower() for k in ['monto', 'importe', 'valor'])), None)
+            col_fecha = next((c for c in columnas if any(k in c.lower() for k in ['fecha', 'date'])), None)
+
+            # --- Gráfica 1: Resumen Total ---
+            plt.figure(figsize=(10, 6))
+            total_fraudes = len(datos)
+            plt.bar(['Total de Fraudes Detectados'], [total_fraudes], color='#e74c3c', alpha=0.8)
+            plt.title(f'Resumen Monitor SAC - {datetime.now().strftime("%d/%m/%Y")}', fontsize=14, fontweight='bold')
+            plt.ylabel('Cantidad de Fraudes')
+            plt.text(0, total_fraudes/2, str(total_fraudes), ha='center', va='center', fontsize=16, fontweight='bold', color='white')
+            archivo_resumen = os.path.join(self.carpeta_graficas, f"resumen_total_{fecha_hoy}.png")
+            plt.tight_layout()
+            plt.savefig(archivo_resumen, dpi=300, bbox_inches='tight')
+            plt.close()
+            graficas_generadas.append(archivo_resumen)
+            
+            # --- Gráfica 2: Top Negocios ---
+            if col_negocio:
+                plt.figure(figsize=(12, 8))
+                fraudes_por_negocio = datos[col_negocio].value_counts().head(10)
+                sns.barplot(y=fraudes_por_negocio.index, x=fraudes_por_negocio.values, palette='viridis')
+                plt.title(f'Top 10 Negocios con Más Fraudes - {datetime.now().strftime("%d/%m/%Y")}', fontsize=14, fontweight='bold')
+                plt.xlabel('Número de Fraudes')
+                plt.ylabel('Negocio/Comercio')
+                archivo_negocio = os.path.join(self.carpeta_graficas, f"fraudes_negocio_{fecha_hoy}.png")
+                plt.tight_layout()
+                plt.savefig(archivo_negocio, dpi=300, bbox_inches='tight')
+                plt.close()
+                graficas_generadas.append(archivo_negocio)
+
+            # --- Gráfica 3: Distribución Horaria ---
+            if col_hora or col_fecha:
+                datos_temp = datos.copy()
+                if col_hora:
+                    datos_temp['hora_num'] = pd.to_datetime(datos_temp[col_hora], errors='coerce').dt.hour
+                elif col_fecha:
+                    datos_temp['hora_num'] = pd.to_datetime(datos_temp[col_fecha], errors='coerce').dt.hour
+                
+                datos_temp.dropna(subset=['hora_num'], inplace=True)
+                datos_temp['hora_num'] = datos_temp['hora_num'].astype(int)
+
+                if not datos_temp.empty:
+                    plt.figure(figsize=(12, 6))
+                    fraudes_por_hora = datos_temp['hora_num'].value_counts().sort_index()
+                    sns.lineplot(x=fraudes_por_hora.index, y=fraudes_por_hora.values, marker='o', markersize=8, linewidth=2)
+                    plt.title(f'Distribución de Fraudes por Horario - {datetime.now().strftime("%d/%m/%Y")}', fontsize=14, fontweight='bold')
+                    plt.xlabel('Hora del Día')
+                    plt.ylabel('Número de Fraudes')
+                    plt.xticks(range(0, 24))
+                    plt.grid(True, alpha=0.3)
+                    archivo_horario = os.path.join(self.carpeta_graficas, f"fraudes_horario_{fecha_hoy}.png")
+                    plt.tight_layout()
+                    plt.savefig(archivo_horario, dpi=300, bbox_inches='tight')
+                    plt.close()
+                    graficas_generadas.append(archivo_horario)
+
+            print(f"✅ Gráficas generadas: {len(graficas_generadas)}")
+            return graficas_generadas
+        except Exception as e:
+            print(f"❌ Error al generar gráficas: {e}")
+            return []
+
+    def enviar_reporte_outlook(self, datos, graficas):
+        """
+        Envía reporte usando Outlook corporativo con imágenes incrustadas en el cuerpo.
+        """
+        try:
+            print("📧 Preparando envío de correo HTML por Outlook...")
+            mail = self.outlook.CreateItem(0)
+            
+            destinatarios = ["20210832@lamolina.edu.pe"]
+            mail.To = "; ".join(destinatarios)
+            
+            fecha_reporte = datetime.now().strftime("%d/%m/%Y")
+            mail.Subject = f"[AUTOMATICO] Reporte Diario de Fraudes - {fecha_reporte} (Carpeta: {self.carpeta_outlook_objetivo})"
+            
+            total_fraudes = len(datos)
+            
+            # --- Lógica para incrustar imágenes ---
+            graficas_incrustadas = {}
+            for i, grafica_path in enumerate(graficas):
+                if os.path.exists(grafica_path):
+                    cid = f"grafica{i+1}"
+                    attachment = mail.Attachments.Add(os.path.abspath(grafica_path))
+                    attachment.PropertyAccessor.SetProperty("http://schemas.microsoft.com/mapi/proptag/0x3712001F", cid)
+                    graficas_incrustadas[grafica_path] = cid
+                    print(f"🖼️  Imagen preparada para incrustar con CID: {cid}")
+
+            # --- Construcción del cuerpo del correo en HTML ---
+            cuerpo_html = f"""
+            <html>
+            <head>
+                <style>
+                    body {{ font-family: Arial, sans-serif; color: #333; }}
+                    .container {{ padding: 20px; border: 1px solid #ddd; border-radius: 8px; max-width: 800px; margin: auto; }}
+                    .header {{ background-color: #f2f2f2; padding: 10px; border-bottom: 2px solid #e74c3c; font-size: 18px; font-weight: bold; text-align: center;}}
+                    .summary-table {{ width: 100%; border-collapse: collapse; margin-top: 15px; }}
+                    .summary-table td {{ padding: 8px; border: 1px solid #ddd; }}
+                    .summary-table .label {{ font-weight: bold; background-color: #f9f9f9; width: 40%; }}
+                    .section-title {{ color: #e74c3c; border-bottom: 1px solid #eee; padding-bottom: 5px; margin-top: 25px; }}
+                    .footer {{ margin-top: 25px; font-size: 12px; color: #777; text-align: center; }}
+                    img {{ max-width: 100%; height: auto; border: 1px solid #ccc; border-radius: 4px; margin-top: 10px; }}
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="header">REPORTE AUTOMÁTICO DE FRAUDES</div>
+                    <p>
+                        <b>Fuente:</b> Carpeta Outlook '{self.carpeta_outlook_objetivo}'<br>
+                        <b>Fecha:</b> {fecha_reporte}<br>
+                        <b>Hora de generación:</b> {datetime.now().strftime("%H:%M:%S")}
+                    </p>
+                    <h3 class="section-title">📊 RESUMEN EJECUTIVO</h3>
+                    <table class="summary-table">
+                        <tr><td class="label">🚨 Total de fraudes detectados</td><td><b>{total_fraudes}</b></td></tr>
+                    </table>
+                    <h3 class="section-title">📈 ANÁLISIS VISUAL</h3>
+            """
+
+            if not graficas_incrustadas:
+                cuerpo_html += "<p>No se generaron gráficas para este reporte.</p>"
+            else:
+                for path, cid in graficas_incrustadas.items():
+                    cuerpo_html += f'<h4>{os.path.basename(path).replace("_", " ").replace(".png", "").title()}</h4>'
+                    cuerpo_html += f'<img src="cid:{cid}"><br><br>'
+
+            cuerpo_html += f"""
+                    <div class="footer">
+                        <p>Este reporte ha sido generado automáticamente por el Sistema de Monitoreo de Fraudes.</p>
+                        <p><i>CONFIDENCIAL - Solo para personal autorizado</i></p>
+                    </div>
+                </div>
+            </body>
+            </html>
+            """
+            
+            mail.HTMLBody = cuerpo_html
+
+            # --- Adjuntar Excel (este sí va como archivo) ---
+            fecha_hoy = datetime.now().strftime("%Y%m%d")
+            excel_diario = os.path.join(self.carpeta_diarios, f"fraudes_{fecha_hoy}.xlsx")
+            if os.path.exists(excel_diario):
+                mail.Attachments.Add(os.path.abspath(excel_diario))
+                print(f"📎 Adjuntado (archivo): fraudes_{fecha_hoy}.xlsx")
+            
+            mail.Importance = 2  # High
+            mail.Send()
+            
+            print(f"✅ Reporte enviado exitosamente a: {', '.join(destinatarios)}")
+            
+        except Exception as e:
+            print(f"❌ Error al enviar correo: {e}")
+            print("⚠️  Revisa que Outlook esté abierto y funcionando")
+
+    def limpiar_archivos_temporales(self):
+        """Limpia archivos temporales"""
+        try:
+            print("🧹 Limpiando archivos temporales...")
+            for folder in [self.carpeta_temp, self.carpeta_graficas]:
+                for archivo in os.listdir(folder):
+                    ruta_archivo = os.path.join(folder, archivo)
+                    os.remove(ruta_archivo)
+            print("✅ Limpieza completada.")
+        except Exception as e:
+            print(f"⚠️ Error al limpiar archivos temporales: {e}")
     
-ErrorHandler2:
-    DoCmd.Hourglass False
-    MsgBox "Error en importación rápida: " & Err.Description, vbCritical
-End Sub
+    def probar_conexion_carpeta(self):
+        """Función de prueba para verificar conexión a la carpeta personalizada"""
+        try:
+            print(f"🧪 Probando conexión a la carpeta '{self.carpeta_outlook_objetivo}'...")
+            carpeta_objetivo = self.obtener_carpeta_personalizada()
+            print(f"📧 Total de correos en la carpeta: {carpeta_objetivo.Items.Count}")
+            
+            items = carpeta_objetivo.Items
+            items.Sort("[ReceivedTime]", True)
+            
+            print("\n📋 Últimos 5 correos en la carpeta:")
+            for i in range(min(5, items.Count)):
+                correo = items[i]
+                print(f"  {i+1}. [{correo.ReceivedTime.strftime('%d/%m/%Y %H:%M')}] De: {correo.SenderEmailAddress or 'N/A'}")
+                print(f"     Asunto: {correo.Subject}")
+                print(f"     Adjuntos: {correo.Attachments.Count}\n")
+            return True
+        except Exception as e:
+            print(f"❌ Error al probar conexión: {e}")
+            return False
+
+# --- Ejecución del Script ---
+def main():
+    """Función principal para ejecutar el procesamiento"""
+    try:
+        procesador = ProcesadorReportesFraudeOutlook()
+        if procesador.probar_conexion_carpeta():
+            procesador.procesar_correo_diario()
+    except Exception as e:
+        print(f"💥 Error crítico en el proceso: {e}")
+        print("🔧 Verifica que Outlook esté abierto y que la carpeta '{procesador.carpeta_outlook_objetivo}' exista.")
+
+if __name__ == "__main__":
+    main()
