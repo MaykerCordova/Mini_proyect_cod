@@ -1,0 +1,130 @@
+import pandas as pd
+import numpy as np
+
+def generar_resumen_ejecutivo(data):
+    """
+    Genera métricas del resumen ejecutivo para reclamos de fraude
+    
+    Args:
+        data: DataFrame con columnas:
+        - 'ACF-Indicador de Fraude': Estado inicial (N, F, D)
+        - 'ACF-Tipo de Resultado Caso de Investigacion': Estado final (1, 2, 3, 4)
+        - 'Monto': Monto de la transacción
+    """
+    
+    # 1. MÉTRICAS PRINCIPALES
+    total_transacciones = len(data)
+    monto_total_reclamos = data['Monto'].sum()
+    
+    # Monto total cuando el resultado es fraude (ajustar código según tu sistema)
+    # Asumiendo que 3 = Fraude Confirmado
+    fraude_confirmado = data[data['ACF-Tipo de Resultado Caso de Investigacion'] == 3]
+    monto_total_fraude = fraude_confirmado['Monto'].sum()
+    cantidad_fraudes = len(fraude_confirmado)
+    
+    monto_promedio = data['Monto'].mean()
+    monto_promedio_fraude = fraude_confirmado['Monto'].mean() if cantidad_fraudes > 0 else 0
+    
+    # Casos cerrados hoy (asumiendo que los pendientes tienen valor específico, ej: 4)
+    # Ajusta este valor según tu codificación
+    casos_cerrados_hoy = len(data[data['ACF-Tipo de Resultado Caso de Investigacion'] != 4])  # 4 = Pendiente
+    casos_pendientes = len(data[data['ACF-Tipo de Resultado Caso de Investigacion'] == 4])
+    
+    # Tasa de resolución
+    tasa_resolucion = (casos_cerrados_hoy / total_transacciones) * 100 if total_transacciones > 0 else 0
+    
+    # 2. DISTRIBUCIÓN ESTADO INICIAL
+    dist_inicial = data['ACF-Indicador de Fraude'].value_counts(normalize=True) * 100
+    
+    # Mapeo de códigos a nombres (ajusta según tu codificación)
+    mapeo_inicial = {'N': 'Buena', 'F': 'Fraude', 'D': 'Denegada'}
+    
+    # 3. DISTRIBUCIÓN RESOLUCIÓN FINAL
+    dist_final = data['ACF-Tipo de Resultado Caso de Investigacion'].value_counts(normalize=True) * 100
+    
+    # Mapeo de códigos a nombres (ajusta según tu codificación)
+    mapeo_final = {1: 'Buena', 2: 'Descarte', 3: 'Fraude Confirmado', 4: 'Pendiente'}
+    
+    # GENERAR REPORTE
+    print("=" * 50)
+    print("RESUMEN EJECUTIVO - RECLAMOS DE FRAUDE")
+    print("=" * 50)
+    
+    print("\n📊 MÉTRICAS PRINCIPALES DEL DÍA")
+    print(f"• Número de transacciones total: {total_transacciones:,}")
+    print(f"• Monto total de reclamos: ${monto_total_reclamos:,.2f}")
+    print(f"• Monto total fraude confirmado: ${monto_total_fraude:,.2f}")
+    print(f"• Cantidad de fraudes confirmados: {cantidad_fraudes:,}")
+    print(f"• Monto promedio por reclamo: ${monto_promedio:,.2f}")
+    print(f"• Monto promedio por fraude: ${monto_promedio_fraude:,.2f}")
+    print(f"• Casos cerrados hoy: {casos_cerrados_hoy:,}")
+    print(f"• Tasa de resolución: {tasa_resolucion:.1f}%")
+    print(f"• Casos pendientes acumulados: {casos_pendientes:,}")
+    
+    print("\n🚨 DISTRIBUCIÓN ESTADO INICIAL")
+    for codigo, nombre in mapeo_inicial.items():
+        porcentaje = dist_inicial.get(codigo, 0)
+        count = len(data[data['ACF-Indicador de Fraude'] == codigo])
+        print(f"• {nombre}: {porcentaje:.1f}% ({count:,} casos)")
+    
+    print("\n✅ DISTRIBUCIÓN RESOLUCIÓN FINAL")
+    for codigo, nombre in mapeo_final.items():
+        porcentaje = dist_final.get(codigo, 0)
+        count = len(data[data['ACF-Tipo de Resultado Caso de Investigacion'] == codigo])
+        print(f"• {nombre}: {porcentaje:.1f}% ({count:,} casos)")
+    
+    # MÉTRICAS ADICIONALES
+    print("\n📈 MÉTRICAS ADICIONALES")
+    
+    # Distribución por rangos de monto
+    data['rango_monto'] = pd.cut(data['Monto'], 
+                                bins=[0, 100, 500, 1000, float('inf')],
+                                labels=['<$100', '$100-$500', '$500-$1000', '>$1000'])
+    
+    dist_montos = data['rango_monto'].value_counts(normalize=True) * 100
+    print("Distribución por rangos de monto:")
+    for rango, porcentaje in dist_montos.items():
+        count = len(data[data['rango_monto'] == rango])
+        print(f"• {rango}: {porcentaje:.1f}% ({count:,} casos)")
+    
+    # Retornar diccionario con métricas para usar programáticamente
+    return {
+        'total_transacciones': total_transacciones,
+        'monto_total': monto_total_reclamos,
+        'monto_total_fraude': monto_total_fraude,
+        'cantidad_fraudes': cantidad_fraudes,
+        'monto_promedio': monto_promedio,
+        'monto_promedio_fraude': monto_promedio_fraude,
+        'casos_cerrados': casos_cerrados_hoy,
+        'casos_pendientes': casos_pendientes,
+        'tasa_resolucion': tasa_resolucion,
+        'distribucion_inicial': dist_inicial.to_dict(),
+        'distribucion_final': dist_final.to_dict(),
+        'distribucion_montos': dist_montos.to_dict()
+    }
+
+# EJEMPLO DE USO:
+# metricas = generar_resumen_ejecutivo(data)
+
+# Para generar solo las métricas sin imprimir:
+def obtener_metricas_dict(data):
+    """Versión que solo retorna el diccionario de métricas sin imprimir"""
+    total_transacciones = len(data)
+    monto_total_reclamos = data['Monto'].sum()
+    casos_cerrados_hoy = len(data[data['ACF-Tipo de Resultado Caso de Investigacion'] != 4])
+    casos_pendientes = len(data[data['ACF-Tipo de Resultado Caso de Investigacion'] == 4])
+    tasa_resolucion = (casos_cerrados_hoy / total_transacciones) * 100 if total_transacciones > 0 else 0
+    
+    dist_inicial = data['ACF-Indicador de Fraude'].value_counts(normalize=True) * 100
+    dist_final = data['ACF-Tipo de Resultado Caso de Investigacion'].value_counts(normalize=True) * 100
+    
+    return {
+        'total_transacciones': total_transacciones,
+        'monto_total': monto_total_reclamos,
+        'monto_promedio': data['Monto'].mean(),
+        'casos_cerrados': casos_cerrados_hoy,
+        'casos_pendientes': casos_pendientes,
+        'tasa_resolucion': tasa_resolucion,
+        'distribucion_inicial': dist_inicial.to_dict(),
+        'distribucion_final': dist_final.to_dict()
+    }
