@@ -1,0 +1,51 @@
+import pandas as pd
+import plotly.graph_objects as go
+
+# Supongamos que tu DataFrame se llama 'df' (reemplaza con el tuyo)
+# Ejemplo simulado si no lo tienes listo:
+data_simulada = {
+    'estado_inicial': ['fraude']*15 + ['no fraude']*10 + ['descarte']*6,
+    'resultado_investigacion': ['fraude']*10 + ['buena']*3 + ['pendiente']*2 +  # Para 'fraude' inicial
+                                ['fraude']*2 + ['buena']*5 + ['pendiente']*2 + ['descarte']*1 +  # Para 'no fraude'
+                                ['fraude']*1 + ['buena']*1 + ['pendiente']*3 + ['descarte']*1   # Para 'descarte'
+}
+df = pd.DataFrame(data_simulada)  # Reemplaza esto con tu df real
+
+# Paso 1: Agrupar y contar transiciones
+transiciones = df.groupby(['estado_inicial', 'resultado_investigacion']).size().reset_index(name='valor')
+
+# Paso 2: Definir etiquetas únicas (nodos: todas las categorías de ambas variables)
+labels = list(set(transiciones['estado_inicial']).union(set(transiciones['resultado_investigacion'])))
+label_to_index = {label: idx for idx, label in enumerate(labels)}
+
+# Preparar source, target y value
+source = [label_to_index[state] for state in transiciones['estado_inicial']]
+target = [label_to_index[result] for result in transiciones['resultado_investigacion']]
+value = transiciones['valor']
+
+# Paso 3: Crear el gráfico de Sankey
+fig = go.Figure(data=[go.Sankey(
+    node=dict(
+        pad=15,  # Espacio entre nodos
+        thickness=20,  # Grosor de nodos
+        line=dict(color="black", width=0.5),  # Borde de nodos
+        label=labels,  # Etiquetas de nodos
+        color="blue"  # Color base de nodos (puedes cambiar)
+    ),
+    link=dict(
+        source=source,  # Índices de origen
+        target=target,  # Índices de destino
+        value=value,   # Peso de las transiciones (conteos)
+        color="lightblue"  # Color de enlaces (puedes personalizar)
+    )
+)])
+
+# Personalizaciones
+fig.update_layout(
+    title_text="Flujo de Estados Iniciales a Resultados de Investigación",
+    font_size=12,
+    width=800,  # Ancho del gráfico
+    height=600  # Alto del gráfico
+)
+
+fig.show()  # Muestra el gráfico (en notebook o abre en navegador)
