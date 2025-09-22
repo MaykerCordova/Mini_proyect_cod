@@ -45,3 +45,62 @@ print(resultado[['llave_actualiza', 'descarte_previo']].head())
 # Guardar el resultado en un nuevo Excel
 resultado.to_excel('resultado_cruce_fraude_cartas.xlsx', index=False)
 print("\nResultado guardado en 'resultado_cruce_fraude_cartas.xlsx'")
+
+........
+....
+...
+.....
+# Cargar librerías necesarias
+library(readxl)
+library(dplyr)
+library(writexl)
+
+# Cargar los archivos Excel (ya están filtrados por fechas)
+fraude_df <- read_excel("tabla_fraude.xlsx")  # Reemplaza con tu archivo
+cartas_df <- read_excel("tabla_cartas.xlsx")  # Reemplaza con tu archivo
+
+# Mostrar información básica
+cat("Registros de fraude:", nrow(fraude_df), "\n")
+cat("Registros de cartas/descartes:", nrow(cartas_df), "\n\n")
+
+# Realizar el LEFT JOIN usando la llave_actualiza
+resultado <- fraude_df %>%
+  left_join(cartas_df %>% select(llave_actualiza), 
+            by = "llave_actualiza",
+            suffix = c("_fraude", "_carta"))
+
+# Crear la columna indicadora
+# Si hay NA en alguna columna que vino del join, significa que no hubo match
+resultado <- resultado %>%
+  mutate(descarte_previo = ifelse(
+    llave_actualiza %in% cartas_df$llave_actualiza, 
+    "Sí", 
+    "No"
+  ))
+
+# Contar cuántos fraudes tuvieron descarte previo
+fraudes_con_descarte <- table(resultado$descarte_previo)
+cat("Resumen de fraudes con descarte previo:\n")
+print(fraudes_con_descarte)
+
+# Calcular porcentajes
+total_fraudes <- nrow(resultado)
+con_descarte <- sum(resultado$descarte_previo == "Sí")
+porcentaje <- (con_descarte / total_fraudes) * 100
+
+cat("\nDe", total_fraudes, "fraudes:\n")
+cat("- ", con_descarte, "tuvieron descarte previo (", round(porcentaje, 1), "%)\n")
+cat("- ", total_fraudes - con_descarte, "NO tuvieron descarte previo (", 
+    round(100 - porcentaje, 1), "%)\n\n")
+
+# Mostrar una muestra del resultado
+cat("Muestra de los primeros 5 registros del resultado:\n")
+print(head(resultado %>% select(llave_actualiza, descarte_previo), 5))
+
+# Guardar el resultado en un nuevo Excel
+write_xlsx(resultado, "resultado_cruce_fraude_cartas.xlsx")
+cat("\nResultado guardado en 'resultado_cruce_fraude_cartas.xlsx'\n")
+
+# Mostrar estructura del resultado final
+cat("\nEstructura del resultado final:\n")
+str(resultado)
