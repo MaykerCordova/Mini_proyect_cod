@@ -1,0 +1,47 @@
+import pandas as pd
+
+# Cargar los archivos Excel (ya están filtrados por fechas)
+fraude_df = pd.read_excel('tabla_fraude.xlsx')  # Reemplaza con tu archivo
+cartas_df = pd.read_excel('tabla_cartas.xlsx')  # Reemplaza con tu archivo
+
+print(f"Registros de fraude: {len(fraude_df)}")
+print(f"Registros de cartas/descartes: {len(cartas_df)}")
+
+# Realizar el LEFT JOIN usando la llave_actualiza
+resultado = fraude_df.merge(
+    cartas_df[['llave_actualiza']],  # Solo tomamos la llave_actualiza de cartas
+    on='llave_actualiza',
+    how='left',
+    indicator=True  # Esto nos ayuda a saber si hubo match
+)
+
+# Crear la columna indicadora
+resultado['descarte_previo'] = resultado['_merge'].map({
+    'both': 'Sí',      # Aparece en ambas tablas
+    'left_only': 'No'  # Solo aparece en fraude
+})
+
+# Contar cuántos fraudes tuvieron descarte previo
+fraudes_con_descarte = resultado['descarte_previo'].value_counts()
+print("\nResumen de fraudes con descarte previo:")
+print(fraudes_con_descarte)
+
+# Calcular porcentajes
+total_fraudes = len(resultado)
+con_descarte = len(resultado[resultado['descarte_previo'] == 'Sí'])
+porcentaje = (con_descarte / total_fraudes) * 100
+
+print(f"\nDe {total_fraudes} fraudes:")
+print(f"- {con_descarte} tuvieron descarte previo ({porcentaje:.1f}%)")
+print(f"- {total_fraudes - con_descarte} NO tuvieron descarte previo ({100 - porcentaje:.1f}%)")
+
+# Eliminar la columna auxiliar _merge antes de mostrar y guardar
+resultado = resultado.drop('_merge', axis=1)
+
+# Mostrar una muestra del resultado
+print("\nMuestra de los primeros 5 registros del resultado:")
+print(resultado[['llave_actualiza', 'descarte_previo']].head())
+
+# Guardar el resultado en un nuevo Excel
+resultado.to_excel('resultado_cruce_fraude_cartas.xlsx', index=False)
+print("\nResultado guardado en 'resultado_cruce_fraude_cartas.xlsx'")
