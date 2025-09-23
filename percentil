@@ -11,3 +11,83 @@ ggplot(data.frame(pct_diff), aes(x = pct_diff)) +
     y = "Frecuencia"
   ) +
   theme_minimal()
+
+===========
+# Cargar librerías
+library(ggplot2)
+library(dplyr)
+
+# --- SUPONGAMOS QUE TU DATA FRAME SE LLAMA 'df' ---
+# Debe tener al menos estas columnas:
+# - fecha: fecha del registro (ej. "2025-04-01")
+# - pct_diff: porcentaje de diferencia (valor decimal, NO redondeado)
+
+# Ejemplo de cómo debería verse tu data frame:
+# df <- data.frame(
+#   fecha = seq(as.Date("2025-04-01"), as.Date("2025-09-21"), by = "day"),
+#   pct_diff = rnorm(174, mean = 0.02, sd = 0.1)  # reemplaza con tus datos reales
+# )
+
+# Asegúrate de que la columna 'fecha' sea de tipo Date
+df$fecha <- as.Date(df$fecha)
+
+# Calcular umbrales (ajusta estos valores con tus percentiles reales)
+umbral_moderado <- 0.05     # +5%
+umbral_critico <- 0.3056    # +30.56%
+
+# Crear columna para destacar alertas críticas
+df$alerta <- ifelse(df$pct_diff > umbral_critico, "Crítica", "Normal")
+
+# --- GRÁFICO ---
+ggplot(df, aes(x = fecha, y = pct_diff)) +
+  
+  # Línea de evolución
+  geom_line(color = "gray60", size = 0.8) +
+  
+  # Puntos normales
+  geom_point(data = subset(df, alerta == "Normal"), 
+             aes(color = "Normal"), size = 2) +
+  
+  # Puntos críticos (destacados en rojo)
+  geom_point(data = subset(df, alerta == "Crítica"), 
+             aes(color = "Crítica"), size = 4, shape = 17) +
+  
+  # Línea de umbral moderado (+5%)
+  geom_hline(yintercept = umbral_moderado, 
+             color = "orange", linetype = "dashed", size = 1) +
+  
+  # Línea de umbral crítico (+30.56%)
+  geom_hline(yintercept = umbral_critico, 
+             color = "red", linetype = "dashed", size = 1) +
+  
+  # Etiquetas de umbrales
+  annotate("text", x = min(df$fecha), y = umbral_moderado, 
+           label = "+5% (Revisión)", 
+           color = "orange", hjust = 0, vjust = -0.5, size = 4) +
+  
+  annotate("text", x = min(df$fecha), y = umbral_critico, 
+           label = "+30.56% (Alerta Crítica)", 
+           color = "red", hjust = 0, vjust = -0.5, size = 4) +
+  
+  # Títulos y etiquetas
+  labs(
+    title = "Evolución Diaria del % de Diferencias",
+    subtitle = "Periodo: 01/04/2025 - 21/09/2025",
+    x = "Fecha",
+    y = "% Diferencia (UBA - SBP) / UBA",
+    color = "Estado"
+  ) +
+  
+  # Escala de colores
+  scale_color_manual(values = c("Normal" = "steelblue", "Crítica" = "red")) +
+  
+  # Tema limpio
+  theme_minimal() +
+  theme(
+    legend.position = "top",
+    plot.title = element_text(size = 14, face = "bold"),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  ) +
+
+  # Formato del eje Y en porcentaje
+  scale_y_continuous(labels = scales::percent_format(accuracy = 0.1))
