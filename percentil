@@ -91,3 +91,78 @@ ggplot(df, aes(x = fecha, y = pct_diff)) +
 
   # Formato del eje Y en porcentaje
   scale_y_continuous(labels = scales::percent_format(accuracy = 0.1))
+ooooopp
+ooooopp
+library(ggplot2)
+library(dplyr)
+library(scales)
+
+# Supongamos que tu data frame se llama 'df' con columnas:
+# - fecha: tipo Date
+# - pct_diff: valor decimal (no redondeado)
+
+# Asegúrate de que 'fecha' es de tipo Date
+df$fecha <- as.Date(df$fecha)
+
+# Definir umbrales
+umbral_revision <- 0.05      # +5%
+umbral_critico <- 0.3056     # +30.56%
+
+# Crear columna de alerta
+df$alerta <- ifelse(df$pct_diff > umbral_critico, "Crítica", "Normal")
+
+# --- GRÁFICO MEJORADO ---
+ggplot(df, aes(x = fecha, y = pct_diff)) +
+
+  # Línea de evolución (solo para días normales)
+  geom_line(data = subset(df, alerta == "Normal"), 
+            color = "gray60", size = 0.8) +
+
+  # Puntos normales
+  geom_point(data = subset(df, alerta == "Normal"),
+             aes(color = "Normal"), size = 1.5, shape = 16) +
+
+  # Puntos críticos (triángulos rojos)
+  geom_point(data = subset(df, alerta == "Crítica"),
+             aes(color = "Crítica"), size = 3, shape = 17) +
+
+  # Líneas horizontales de umbrales
+  geom_hline(yintercept = umbral_revision, 
+             color = "orange", linetype = "dashed", size = 1) +
+  geom_hline(yintercept = umbral_critico, 
+             color = "red", linetype = "dashed", size = 1) +
+
+  # Etiquetas de umbrales
+  annotate("text", x = min(df$fecha), y = umbral_revision, 
+           label = "+5% (Revisión)", 
+           color = "orange", hjust = 0, vjust = 0.5, size = 3) +
+  annotate("text", x = min(df$fecha), y = umbral_critico, 
+           label = "+30.56% (Alerta Crítica)", 
+           color = "red", hjust = 0, vjust = 0.5, size = 3) +
+
+  # Títulos y etiquetas
+  labs(
+    title = "Evolución Diaria del % de Diferencias",
+    subtitle = "Periodo: 01/04/2025 – 21/09/2025",
+    x = "Fecha",
+    y = "% Diferencia (UBA - SBP) / UBA",
+    colour = "Estado"
+  ) +
+
+  # Escala de colores
+  scale_color_manual(values = c("Normal" = "#00BFC4", "Crítica" = "red")) +
+
+  # Formato del eje Y en porcentaje
+  scale_y_continuous(labels = percent_format(accuracy = 0.1)) +
+
+  # Tema limpio
+  theme_minimal() +
+  theme(
+    legend.position = "top",
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    axis.text.y = element_text(size = 10),
+    panel.grid.major = element_line(color = "gray90"),
+    panel.grid.minor = element_blank()
+  )
