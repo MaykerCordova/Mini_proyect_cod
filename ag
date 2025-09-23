@@ -1,0 +1,17 @@
+### 7. Validación Estadística No Paramétrica
+
+Para reforzar la elección del percentil 95% como umbral crítico, se aplicaron las siguientes pruebas no paramétricas:
+
+#### 7.1 Prueba de Shapiro-Wilk (normalidad)
+- **Resultado**: W = 0.51294, p < 2.2e-16.
+- **Interpretación**: Se rechaza la hipótesis de normalidad → se justifica el uso de percentiles empíricos.
+
+#### 7.2 Bootstrap del percentil 95%
+- **Resultado**: IC 95% = (21.23%, 48.66%).
+- **Interpretación**: El valor observado (30.56%) está dentro del intervalo → es estadísticamente confiable.
+
+#### 7.3 Gráfico de control individual (I-MR)
+- **Resultado**: Proceso estable, sin tendencias ni cambios estructurales.
+- **Interpretación**: Se puede usar un umbral fijo.
+
+Estas pruebas confirman que el enfoque no paramétrico es el más adecuado y que el umbral seleccionado es robusto, reproducible y auditado.
