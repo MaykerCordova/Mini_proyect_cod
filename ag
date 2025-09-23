@@ -1,17 +1,18 @@
-### 7. Validación Estadística No Paramétrica
 
-Para reforzar la elección del percentil 95% como umbral crítico, se aplicaron las siguientes pruebas no paramétricas:
+### 1. Prueba de Normalidad (Shapiro-Wilk)
 
-#### 7.1 Prueba de Shapiro-Wilk (normalidad)
-- **Resultado**: W = 0.51294, p < 2.2e-16.
-- **Interpretación**: Se rechaza la hipótesis de normalidad → se justifica el uso de percentiles empíricos.
+Se aplicó la prueba de Shapiro-Wilk para verificar si los datos del % de diferencias siguen una distribución normal:
 
-#### 7.2 Bootstrap del percentil 95%
-- **Resultado**: IC 95% = (21.23%, 48.66%).
-- **Interpretación**: El valor observado (30.56%) está dentro del intervalo → es estadísticamente confiable.
+- **Estadístico W**: 0.51294
+- **p-valor**: < 2.2e-16
 
-#### 7.3 Gráfico de control individual (I-MR)
-- **Resultado**: Proceso estable, sin tendencias ni cambios estructurales.
-- **Interpretación**: Se puede usar un umbral fijo.
+Dado que el p-valor es menor que 0.05, se **rechaza la hipótesis nula** de normalidad. Esto indica que los datos **no siguen una distribución normal**, por lo que se descartaron métodos paramétricos (como media ± desviación estándar) y se optó por un enfoque no paramétrico basado en percentiles empíricos, que no requiere supuestos de distribución.
 
-Estas pruebas confirman que el enfoque no paramétrico es el más adecuado y que el umbral seleccionado es robusto, reproducible y auditado.
+Este resultado refuerza la validez del método utilizado para establecer el umbral crítico.
+### 2. Bootstrap del Percentil 95%
+
+Para evaluar la precisión del percentil 95% (30.56%), se aplicó el método de bootstrap con 1000 réplicas. Este método permite estimar el intervalo de confianza del 95% sin supuestos de distribución.
+
+El resultado mostró un intervalo de confianza del 95% de **(21.23%, 48.66%)**. Dado que el valor observado de 30.56% se encuentra dentro de este rango, se concluye que la estimación es estadísticamente confiable y robusta.
+
+Este análisis refuerza la validez del umbral crítico seleccionado, ya que no es un valor arbitrario, sino uno que tiene soporte estadístico.
