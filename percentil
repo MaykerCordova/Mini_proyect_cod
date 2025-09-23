@@ -1,0 +1,13 @@
+ggplot(data.frame(pct_diff), aes(x = pct_diff)) +
+  geom_histogram(bins = 50, fill = "steelblue", color = "black", alpha = 0.7) +
+  geom_vline(xintercept = 0.05, color = "orange", linetype = "dashed", size = 1) +
+  geom_vline(xintercept = 0.3056, color = "red", linetype = "dashed", size = 1) +
+  annotate("text", x = 0.05, y = 20, label = "+5%", color = "orange", hjust = -0.1) +
+  annotate("text", x = 0.3056, y = 20, label = "P95 = 30.56%", color = "red", hjust = -0.1) +
+  labs(
+    title = "Distribución del % de Diferencias Diarias",
+    subtitle = "Alerta Crítica > 30.56%",
+    x = "% Diferencia",
+    y = "Frecuencia"
+  ) +
+  theme_minimal()
