@@ -1,0 +1,7 @@
+### Interpretación de Percentiles Clave
+
+- **P75 = 4.19%**: El 75% de los días tienen diferencias menores a este valor.  
+  Dado que este percentil representa el rango superior de los días normales, se estableció un **umbral operativo de revisión en +5%**, ligeramente por encima del P75. Este valor redondeado facilita la comunicación operativa y permite identificar días con diferencias significativas, aunque no críticas, que merecen revisión manual.
+
+- **P95 = 30.56%**: Solo el 5% de los días superan este valor.  
+  Dado que es el percentil 95%, este valor define el **umbral crítico**. Cualquier día que supere este límite indica una pérdida significativa de transacciones y requiere revisión urgente y reporte formal.
