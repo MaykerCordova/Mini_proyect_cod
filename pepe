@@ -1,0 +1,65 @@
+Perfecto, aquí está el código completo con el complemento:
+
+```r
+# LEFT JOIN usando la llave actualiza
+resultado <- fraude_df %>%
+  left_join(descarte_df %>% select(Llave_Actualiza),
+            by = "Llave_Actualiza",
+            suffix = c("_fraude", "_descarte"))
+
+# Crear la columna indicadora
+resultado <- resultado %>%
+  mutate(descarte_previo = ifelse(
+    Llave_Actualiza %in% descarte_df$Llave_Actualiza,
+    "Si",
+    "No"
+  ))
+
+# Contar cuántos fraudes tuvieron descarte previo
+fraudes_con_descarte <- table(resultado$descarte_previo)
+cat("Resumen de fraudes con descarte previo:\n")
+print(fraudes_con_descarte)
+
+# Calcular porcentajes y métricas
+total_fraudes <- nrow(resultado)
+con_descarte <- sum(resultado$descarte_previo == "Si")
+porcentaje <- (con_descarte / total_fraudes) * 100
+
+# Calcular descarte masivo y NO masivo
+con_descarte_masivo <- sum(resultado$descarte_previo == "Si" & 
+                           resultado$`ACF-Texto del Tipo de Resultado` == "Masivo Fraudes")
+con_descarte_no_masivo <- con_descarte - con_descarte_masivo
+
+porcentaje_masivo <- (con_descarte_masivo / total_fraudes) * 100
+porcentaje_no_masivo <- (con_descarte_no_masivo / total_fraudes) * 100
+
+# Mostrar resultados
+cat("\nDe", total_fraudes, "fraudes:\n")
+cat("- ", con_descarte, "tuvieron descarte previo (", round(porcentaje, 1), "%)\n")
+cat("- ", total_fraudes - con_descarte, "NO tuvieron descarte previo (", 
+    round(100 - porcentaje, 1), "%)\n\n")
+
+cat("De los", con_descarte, "fraudes con descarte previo:\n")
+cat("- ", con_descarte_masivo, "son de tipo 'Masivo Fraudes' (", 
+    round(porcentaje_masivo, 1), "% del total de fraudes)\n")
+cat("- ", con_descarte_no_masivo, "son de otros tipos (", 
+    round(porcentaje_no_masivo, 1), "% del total de fraudes)\n")
+```
+
+## Lo que agregué:
+
+```r
+# Calcular los que NO son masivo
+con_descarte_no_masivo <- con_descarte - con_descarte_masivo
+
+# Su porcentaje
+porcentaje_no_masivo <- (con_descarte_no_masivo / total_fraudes) * 100
+```
+
+Ahora tendrás:
+- **con_descarte_masivo:** Fraudes con descarte previo tipo "Masivo Fraudes"
+- **con_descarte_no_masivo:** Fraudes con descarte previo de otros tipos
+- **porcentaje_masivo:** % del total
+- **porcentaje_no_masivo:** % del total (complemento)
+
+La suma de `porcentaje_masivo + porcentaje_no_masivo + porcentaje de sin descarte previo = 100%`
