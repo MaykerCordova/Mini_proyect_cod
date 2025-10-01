@@ -1,0 +1,142 @@
+1. variacion de cantidad de fraude
+Variación Cantidad Fraude = 
+VAR Actual = [Cantidad Fraude Aprobado]
+VAR FechaMin = MIN('Calendario'[Date])
+VAR FechaMax = MAX('Calendario'[Date])
+VAR DiasSeleccionados = FechaMax - FechaMin + 1
+VAR Anterior = 
+    CALCULATE(
+        [Cantidad Fraude Aprobado],
+        DATEADD('Calendario'[Date], -DiasSeleccionados, DAY)
+    )
+VAR Var = DIVIDE(Actual - Anterior, Anterior, BLANK())
+VAR Flecha = 
+    SWITCH(
+        TRUE(),
+        ISBLANK(Var), "",
+        Var > 0, "▲ ",
+        Var < 0, "▼ ",
+        "► "
+    )
+VAR Color = 
+    SWITCH(
+        TRUE(),
+        Var > 0, "🔴",
+        Var < 0, "🟢",
+        "⚪"
+    )
+RETURN
+IF(NOT ISBLANK(Var), Color & " " & Flecha & FORMAT(ABS(Var), "0.0%"), "Sin datos")
+
+2. variacion para ticket promedio
+Ticket Promedio Período Anterior = 
+VAR FechaMin = MIN('Calendario'[Date])
+VAR FechaMax = MAX('Calendario'[Date])
+VAR DiasSeleccionados = FechaMax - FechaMin + 1
+RETURN
+CALCULATE(
+    [Ticket Promedio Fraude],
+    DATEADD('Calendario'[Date], -DiasSeleccionados, DAY)
+)
+
+Variación Ticket Promedio = 
+VAR Actual = [Ticket Promedio Fraude]
+VAR Anterior = [Ticket Promedio Período Anterior]
+VAR Var = DIVIDE(Actual - Anterior, Anterior, BLANK())
+VAR Flecha = 
+    SWITCH(
+        TRUE(),
+        ISBLANK(Var), "",
+        Var > 0, "▲ ",
+        Var < 0, "▼ ",
+        "► "
+    )
+VAR Color = 
+    SWITCH(
+        TRUE(),
+        Var > 0, "🔴",
+        Var < 0, "🟢",
+        "⚪"
+    )
+RETURN
+IF(NOT ISBLANK(Var), Color & " " & Flecha & FORMAT(ABS(Var), "0.0%"), "Sin datos")
+
+3. variacion para %fraude
+% Fraude Período Anterior = 
+VAR FechaMin = MIN('Calendario'[Date])
+VAR FechaMax = MAX('Calendario'[Date])
+VAR DiasSeleccionados = FechaMax - FechaMin + 1
+RETURN
+CALCULATE(
+    [% Fraude del Total],
+    DATEADD('Calendario'[Date], -DiasSeleccionados, DAY)
+)
+
+Variación % Fraude = 
+VAR Actual = [% Fraude del Total]
+VAR Anterior = [% Fraude Período Anterior]
+VAR Diferencia = Actual - Anterior
+VAR Flecha = 
+    SWITCH(
+        TRUE(),
+        ISBLANK(Diferencia), "",
+        Diferencia > 0, "▲ ",
+        Diferencia < 0, "▼ ",
+        "► "
+    )
+VAR Color = 
+    SWITCH(
+        TRUE(),
+        Diferencia > 0, "🔴",
+        Diferencia < 0, "🟢",
+        "⚪"
+    )
+RETURN
+IF(NOT ISBLANK(Diferencia), Color & " " & Flecha & FORMAT(ABS(Diferencia), "0.0%") & " pp", "Sin datos")
+
+
+PASO 2 GREAR KPIS
+1. agregar un visual de tabla
+2. crear una tabla desconectada de los nombres de las metricas
+Tabla KPIs = 
+DATATABLE(
+    "Orden", INTEGER,
+    "Métrica", STRING,
+    {
+        {1, "Monto Total Fraude"},
+        {2, "Cantidad Transacciones"},
+        {3, "Ticket Promedio"},
+        {4, "% Fraude del Total"}
+    }
+)
+
+3. crear una medida dinamica para los valores
+Valor KPI = 
+SWITCH(
+    SELECTEDVALUE('Tabla KPIs'[Métrica]),
+    "Monto Total Fraude", [Monto Fraude Aprobado],
+    "Cantidad Transacciones", [Cantidad Fraude Aprobado],
+    "Ticket Promedio", [Ticket Promedio Fraude],
+    "% Fraude del Total", [% Fraude del Total],
+    BLANK()
+)
+
+Formato Valor KPI = 
+SWITCH(
+    SELECTEDVALUE('Tabla KPIs'[Métrica]),
+    "Monto Total Fraude", FORMAT([Valor KPI], "$#,##0"),
+    "Cantidad Transacciones", FORMAT([Valor KPI], "#,##0"),
+    "Ticket Promedio", FORMAT([Valor KPI], "$#,##0.00"),
+    "% Fraude del Total", FORMAT([Valor KPI], "0.00%"),
+    ""
+)
+
+Variación KPI = 
+SWITCH(
+    SELECTEDVALUE('Tabla KPIs'[Métrica]),
+    "Monto Total Fraude", [Variación Fraude Inteligente],
+    "Cantidad Transacciones", [Variación Cantidad Fraude],
+    "Ticket Promedio", [Variación Ticket Promedio],
+    "% Fraude del Total", [Variación % Fraude],
+    ""
+)
