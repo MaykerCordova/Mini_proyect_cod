@@ -1,0 +1,453 @@
+resumen ia:
+# Guion de Presentación: IA en Prevención de Fraude Bancario
+## Para Gerente - 15 minutos
+
+---
+
+## 🎯 APERTURA (1 minuto)
+
+**"Buenos días, [nombre del gerente]. He completado la investigación sobre IA en prevención de fraudes que me encargó. Encontré hallazgos muy relevantes para Scotiabank Perú. Permítame compartirle los puntos clave en 3 bloques: situación actual del mercado, los retos que enfrentamos, y las oportunidades concretas para nosotros."**
+
+---
+
+## 📊 BLOQUE 1: SITUACIÓN ACTUAL (5 minutos)
+
+### **A nivel GLOBAL - Lo que están haciendo los líderes:**
+
+**"Los bancos top están logrando resultados impresionantes:"**
+
+- **JPMorgan Chase**: $150 millones en ahorros anuales, 50% menos falsos positivos, 98% de precisión
+- **HSBC**: Detecta 2-4 veces más fraudes que antes, procesa 1.35 mil millones de transacciones/mes
+- **DBS Bank**: 90% menos falsos positivos, 75% menos tiempo de investigación
+
+**Tecnologías que usan:**
+- XGBoost y Random Forest (98-99% de precisión)
+- Detección en tiempo real (menos de 100 milisegundos por transacción)
+- Plataformas como FICO Falcon y Feedzai
+
+---
+
+### **A nivel LATINOAMÉRICA - Casos de éxito cercanos:**
+
+**"En la región hay avances significativos:"**
+
+**Brasil:**
+- **Bradesco**: 89% reducción en fricción de fraude, procesa 1,000 millones transacciones PIX/mes
+- **Nubank**: 114 millones de clientes usando IA, 70% reducción en tiempos de respuesta
+
+**México:**
+- **Citibanamex**: 70% de reducción en fraudes con IA (2024)
+- **BBVA México**: 75% de tasa de prevención, 40% menos pérdidas
+
+**Argentina:**
+- **Banco Galicia**: Lanzó en mayo 2025 la primera red de inteligencia colaborativa entre bancos en tiempo real
+
+**El mercado regional:** $1.47 mil millones (2024) → $7.04 mil millones proyectados (2033)
+
+---
+
+### **A nivel PERÚ - Nuestra realidad:**
+
+**"Aquí está la oportunidad:"**
+
+**Lo que vemos:**
+- **BCP**: 72% clientes digitales, Yape con 16 millones usuarios, pero NO hay info pública de IA avanzada en fraude
+- **Interbank/BBVA**: Enfoques principalmente REACTIVOS (educación al cliente, alertas básicas)
+- **Mercado peruano**: 30% de fintechs adoptan IA, pero bancos tradicionales van lentos
+
+**Nosotros (Scotiabank):**
+- ✅ Tenemos Plataforma Global de IA funcionando desde 2020
+- ✅ En Colombia: 30% reducción de costos, 15% menos morosidad con IA
+- ❌ En Perú: NO hemos desplegado estas capacidades públicamente
+
+**INSIGHT CLAVE: Hay una brecha competitiva que podemos aprovechar AHORA**
+
+---
+
+## ⚠️ BLOQUE 2: DESAFÍOS Y NUEVAS AMENAZAS (4 minutos)
+
+### **Las amenazas están evolucionando rápido:**
+
+**"Gerente, lo preocupante es que los criminales también usan IA:"**
+
+**1. Deepfakes bancarios** (Crecimiento 3,000% en 2022-2023)
+- Casos reales: $35 millones robados en Hong Kong clonando voz del CFO
+- 42.5% de intentos de fraude ya usan IA
+
+**2. Fraude de identidad sintética** (Creció de $8B en 2020 → $30B en 2025)
+- IA crea identidades falsas muy convincentes
+- 95% NO se detectan en onboarding tradicional
+
+**3. Phishing con IA generativa** (Aumento 1,265% desde ChatGPT)
+- 5 minutos con IA = 16 horas de trabajo humano de estafadores
+- Tasa de éxito del 60% (igual que expertos humanos)
+
+**Proyección Deloitte: $40 mil millones en pérdidas por fraude con IA para 2027**
+
+---
+
+### **Los retos de implementación que debemos considerar:**
+
+**1. Talento especializado**
+- 57% de bancos identifican escasez de talento como riesgo #1
+- Necesitamos data scientists, ingenieros ML, expertos en ciberseguridad
+
+**2. Calidad de datos**
+- 54% de bancos tienen datos en silos
+- Necesitamos integrar datos de todos los canales
+
+**3. Regulación en Perú**
+- Nueva Ley de Protección de Datos (marzo 2025): notificación de brechas en 48 horas
+- SBS requiere ciberseguridad robusta
+- Necesidad de explicabilidad de modelos
+
+**4. Costos iniciales**
+- Infraestructura, integración, capacitación
+
+**PERO el ROI es claro: $5 ahorrados por cada $1 invertido (caso documentado)**
+
+---
+
+## 💡 BLOQUE 3: OPORTUNIDADES CONCRETAS PARA SCOTIABANK PERÚ (4 minutos)
+
+### **Lo que recomiendo implementar:**
+
+**CORTO PLAZO (6-12 meses) - Quick Wins**
+**Inversión: $200K-$500K**
+
+1. **Proyecto piloto de fraude e-commerce**
+   - Aprovechamos el AI-kathon que hizo Scotiabank Canadá (300 empleados, 83 equipos)
+   - Resultado esperado: 10-15% reducción en pérdidas
+   
+2. **Monitoreo de transacciones en tiempo real**
+   - Detección de anomalías con ML
+   - Alertas instantáneas al cliente (SMS/app/email)
+   
+3. **Hackathon interno**
+   - Identificar talento, generar ideas, construir cultura de IA
+
+---
+
+**MEDIANO PLAZO (1-2 años) - Construcción de Capacidad**
+**Inversión: $1M-$3M**
+
+1. **Plataforma integral de analítica de fraude**
+   - Desplegar nuestra Plataforma Global de IA aquí en Perú
+   - Benchmark Colombia: 20-30% reducción costos, 5x velocidad de modelos
+   
+2. **Biometría comportamental**
+   - Analiza cómo el cliente teclea, mueve el mouse, sostiene el celular
+   - Previene account takeover SIN fricción para el cliente
+   
+3. **Centro de Operaciones de Fraude mejorado**
+   - Sistema centralizado de casos
+   - Investigación asistida por IA
+   - Dashboard en tiempo real
+
+---
+
+**LARGO PLAZO (2-3 años) - Liderazgo en el Mercado**
+**Inversión total: $2M-$5M**
+
+1. **IA agéntica** (como AIDox de Scotiabank: 90% automatización)
+2. **Graph Neural Networks** (detecta redes de fraude complejas)
+3. **Prevención PREDICTIVA** (detectar ANTES de que ocurra el fraude)
+
+---
+
+### **Los números que importan (ROI):**
+
+**Métricas de éxito:**
+- Precision >80%, Recall >85%, Falsos positivos <1%
+- Fraude-a-ventas <1%
+- 20-30% reducción costos operativos
+- Prevenir $600K-$800K por cada $1M de fraude intentado
+
+**ROI proyectado: 200-300% en 3 años**
+**Período de retorno: 18-24 meses**
+
+---
+
+## 🎯 CIERRE (1 minuto)
+
+**"Gerente, en resumen:"**
+
+**3 puntos clave:**
+
+1. **HAY UNA BRECHA COMPETITIVA**: BCP, Interbank, BBVA son reactivos. Nosotros podemos ser PROACTIVOS.
+
+2. **YA TENEMOS LAS CAPACIDADES**: Plataforma Global de IA funcionando, caso de éxito en Colombia. Solo hay que desplegarla aquí.
+
+3. **EL TIMING ES CRÍTICO**: 78% de bancos globales ya adoptaron IA generativa en 2025 vs 8% en 2024. Cada trimestre que esperamos, perdemos ventaja.
+
+**Mi recomendación: Comenzar con los quick wins de $200K-$500K en próximos 6 meses para demostrar valor, luego escalar.**
+
+**¿Qué le gustaría profundizar o qué preguntas tiene?**
+
+---
+
+## 📋 ANEXO: Preguntas que Probablemente Haga
+
+**P: "¿Por qué nosotros y no la competencia?"**
+**R:** Nosotros ya tenemos la Plataforma Global de IA. Ellos tendrían que construirla desde cero (18-24 meses más de demora).
+
+**P: "¿Cuánto personal necesitamos?"**
+**R:** Fase inicial: 3-5 data scientists (podemos traer de otras unidades globales). Fase completa: 10-15 especialistas en 18 meses.
+
+**P: "¿Y si la regulación cambia?"**
+**R:** El nuevo reglamento de datos (marzo 2025) favorece transparencia y seguridad - exactamente lo que IA bien implementada ofrece.
+
+**P: "¿Cuál es el primer paso concreto?"**
+**R:** Evaluación de estado actual (2-4 semanas), luego piloto de fraude e-commerce (3 meses). Puedo tener un plan detallado en 1 semana.
+
+---
+
+**💡 TIP: Lleva el informe completo impreso o en PDF para que lo revise después si quiere profundizar.**
+
+
+linsk:
+# Fuentes y Referencias del Informe
+
+## 📚 SITUACIÓN GLOBAL
+
+### Casos de éxito de bancos internacionales:
+
+1. **JPMorgan Chase:**
+   - https://aiexpert.network/ai-at-jpmorgan/
+   - https://www.amitysolutions.com/blog/ai-banking-jpmorgan-fraud-detection
+
+2. **HSBC & Bancos Globales:**
+   - https://www.financealliance.io/ai-in-risk-management-how-banks-can-mitigate-fraud-and-financial-crimes/
+   - https://www.ibm.com/think/topics/ai-fraud-detection-in-banking
+
+3. **DBS Bank:**
+   - https://www.dbs.com/newsroom/Harvard_Business_School_examines_DBS_AI_strategy_and_implementation_in_its_first_case_study_focusing_on_AI_in_an_Asian_bank
+
+4. **Bank of America:**
+   - https://digitaldefynd.com/IQ/bank-of-america-using-ai-case-study/
+
+5. **Casos generales de IA en banca:**
+   - https://xenoss.io/blog/real-time-ai-fraud-detection-in-banking
+   - https://blogs.nvidia.com/blog/how-ai-helps-fight-fraud/
+   - https://appwrk.com/insights/banking-use-cases-of-ai-in-fraud-detection
+
+---
+
+## 🌎 SITUACIÓN LATINOAMÉRICA
+
+### Brasil:
+
+6. **Bradesco:**
+   - https://www.fico.com/en/newsroom/bradesco-stops-fraud-ai-fico-platform-1b-monthly-transactions-double-approval-speed
+
+7. **Nubank:**
+   - https://openai.com/index/nubank/
+   - https://www.fintechfutures.com/partnerships/brazil-s-nubank-partners-openai-to-enhance-internal-efficiency-and-customer-experience
+
+### México:
+
+8. **Citibanamex:**
+   - https://www.jornada.com.mx/noticia/2024/03/04/economia/fraudes-se-redujeron-70-con-inteligencia-artificial-citibanamex-9093
+   - https://mexicobusiness.news/finance/news/citibanamex-cuts-fraud-attempts-70-ai-integration
+
+9. **BBVA:**
+   - https://www.bbva.com/en/innovation/bbva-strengthens-its-fraud-prevention-capabilities/
+
+### Argentina:
+
+10. **Banco Galicia y red de inteligencia:**
+    - https://www.fstech.co.uk/fst/Santander_Joins_Argentinian_FSIs_To_Launch_Fraud_Intelligence_Sharing_Network.php
+    - https://www.biocatch.com/press-release/argentinia-banks-fintechs-real-time-scams-intel-network
+
+### Mercado Regional:
+
+11. **Panorama LatAm:**
+    - https://www.galileo-ft.com/blog/ai-fraud-prevention-latin-american-banks-fintechs/
+    - https://www.galileo-ft.com/blog/ai-fraud-detection-latin-america-best-practices/
+    - https://www.marketdataforecast.com/market-reports/latin-america-fraud-detection-and-prevention-market
+
+---
+
+## 🇵🇪 SITUACIÓN PERÚ
+
+### Bancos peruanos:
+
+12. **BCP:**
+    - https://www.infobae.com/peru/2023/11/27/bcp-implementara-inteligencia-artificial-en-su-asistente-virtual-de-voz-en-el-primer-trimestre-del-2024/
+    - https://www.mckinsey.com/capabilities/mckinsey-digital/how-we-help-clients/rewired-in-action/bcp-taking-banking-to-new-heights-on-a-digital-rocketship
+    - https://pe.usembassy.gov/bcp-invests-more-than-650m-to-modernize-its-it-infrastructure-with-microsoft-and-kyndryl/
+
+13. **Scotiabank:**
+    - https://www.ainvest.com/news/scotiabank-ai-driven-digital-transformation-building-sustainable-competitive-edge-global-banking-2508/
+    - https://www.scotiabank.com/ca/en/about/perspectives.articles.digital.2023-08-ai-kathon-fraud-detection.html
+
+### Ecosistema fintech y regulación Perú:
+
+14. **Fintech Perú:**
+    - https://www.galileo-ft.com/blog/peru-fintech-ecosystem-growth/
+    - https://practiceguides.chambers.com/practice-guides/fintech-2025/peru/trends-and-developments
+
+15. **Regulación peruana:**
+    - https://www.ey.com/es_pe/insights/law/proteccion-datos-personales-peru-nuevo-reglamento
+    - https://aws.amazon.com/financial-services/security-compliance/compliance-center/pe/
+    - https://practiceguides.chambers.com/practice-guides/banking-regulation-2025/peru
+
+---
+
+## ⚠️ NUEVAS AMENAZAS CON IA
+
+### Deepfakes:
+
+16. **Amenaza deepfakes en banca:**
+    - https://www2.deloitte.com/us/en/insights/industry/financial-services/financial-services-industry-predictions/2024/deepfake-banking-fraud-risk-on-the-rise.html
+    - https://www.realitydefender.com/insights/deepfakes-in-banking-a-growing-threat-to-financial-security
+    - https://www.kaspersky.com/blog/how-deepfakes-threaten-kyc/51987/
+
+### Fraude de identidad sintética:
+
+17. **Identidad sintética:**
+    - https://www.sas.com/en_us/insights/articles/risk-fraud/detect-prevent-banking-application-fraud.html
+    - https://bankingjournal.aba.com/2024/01/the-impact-of-ai-generated-synthetic-fraud-on-finance/
+    - https://www.bostonfed.org/publications/six-hundred-atlantic/interviews/synthetic-identity-fraud-how-ai-is-changing-the-game.aspx
+
+### Phishing con IA:
+
+18. **IA y phishing:**
+    - https://www.mailgun.com/blog/email/ai-phishing/
+    - https://www.cnbc.com/amp/2023/11/28/ai-like-chatgpt-is-creating-huge-increase-in-malicious-phishing-email.html
+    - https://cybelangel.com/blog/rise-ai-phishing/
+
+### Estadísticas generales de fraude:
+
+19. **FBI y fraude con IA:**
+    - https://www.ic3.gov/PSA/2024/PSA241203
+    - https://www.fbi.gov/news/press-releases/fbi-releases-annual-internet-crime-report
+
+20. **Criptomonedas:**
+    - https://www.chainalysis.com/blog/2025-crypto-crime-report-introduction/
+    - https://hackread.com/hackers-drain-billions-crypto-2024-led-defi-exploits/
+
+21. **Account Takeover:**
+    - https://sift.com/blog/beyond-the-breach-2024-account-takeover-data-insights/
+
+---
+
+## 🛡️ DESAFÍOS DE IMPLEMENTACIÓN
+
+### Sesgo algorítmico:
+
+22. **Bias en IA bancaria:**
+    - https://www.cnbc.com/2023/06/23/ai-has-a-discrimination-problem-in-banking-that-can-be-devastating.html
+    - https://www.ey.com/en_us/insights/forensic-integrity-services/ai-discrimination-and-bias-in-financial-services
+    - https://www.brookings.edu/articles/algorithmic-bias-detection-and-mitigation-best-practices-and-policies-to-reduce-consumer-harms/
+
+### Calidad de datos y silos:
+
+23. **Silos de datos:**
+    - https://www.symphonyai.com/resources/blog/financial-services/how-to-use-ai-data-silos-financial-crime-prevention/
+    - https://latinia.com/en/resources/bank-data-silos
+
+### Talento y capacidades:
+
+24. **Brecha de talento en IA:**
+    - https://www.ibm.com/think/insights/ai-skills-gap
+    - https://www.staffingindustry.com/news/global-daily-news/companies-face-growing-shortage-of-ai-skills-in-the-workforce
+    - https://www.weforum.org/stories/2025/01/investing-in-people-the-power-of-human-capital-in-banking-ai-era/
+
+### Ciberseguridad y ataques adversariales:
+
+25. **Ataques a modelos de IA:**
+    - https://www.sysdig.com/learn-cloud-native/adversarial-ai-understanding-and-mitigating-the-threat
+    - https://www.ibm.com/think/topics/data-poisoning
+    - https://www.infosys.com/iki/perspectives/securing-ai-adversarial-attacks.html
+
+### Regulación:
+
+26. **GDPR y IA:**
+    - https://www.exabeam.com/explainers/gdpr-compliance/the-intersection-of-gdpr-and-ai-and-6-compliance-best-practices/
+
+27. **Basilea y IA:**
+    - https://www.bis.org/publ/bcbs_nl27.htm
+
+---
+
+## 💡 OPORTUNIDADES Y TECNOLOGÍAS
+
+### ROI y beneficios:
+
+28. **ROI de prevención de fraude:**
+    - https://www.alloy.com/blog/is-fraud-just-another-cost-of-doing-business
+    - https://risk.lexisnexis.com/insights-resources/research/us-ca-true-cost-of-fraud-study
+    - https://home.treasury.gov/news/press-releases/jy2650
+
+### IA Generativa en banca:
+
+29. **GenAI en banca:**
+    - https://www.ideas2it.com/blogs/generative-ai-in-banking
+    - https://medium.com/slalom-blog/a-new-era-in-fraud-detection-superior-solution-with-ai-ml-genai-llm-c47121208dda
+    - https://paymentscmi.com/insights/ai-artificial-intelligence-use-cases-banking-payments/
+
+### Federated Learning:
+
+30. **Federated Learning para fraude:**
+    - https://www.mdpi.com/1911-8074/18/4/179
+    - https://www.ukfinance.org.uk/news-and-insight/blog/how-federated-learning-strengthens-fraud-detection-in-2025
+    - https://cloud.google.com/blog/products/identity-security/google-cloud-and-swift-pioneer-advanced-ai-and-federated-learning-tech
+    - https://fintechnews.sg/102414/ai/swift-ai-fraud/
+
+### Graph Neural Networks:
+
+31. **GNN para fraude:**
+    - https://developer.nvidia.com/blog/supercharging-fraud-detection-in-financial-services-with-graph-neural-networks/
+    - https://blogs.nvidia.com/blog/how-ai-helps-fight-fraud/
+    - https://engineering.grab.com/graph-for-fraud-detection
+
+### Biometría comportamental:
+
+32. **Behavioral Biometrics:**
+    - https://www.ibm.com/think/topics/behavioral-biometrics
+    - https://www.feedzai.com/blog/behavioral-biometrics-next-generation-fraud-prevention/
+    - https://www.pingidentity.com/en/resources/blog/post/behavioral-biometrics.html
+    - https://www.biocatch.com/blog/what-is-behavioral-biometrics
+
+### Open Banking:
+
+33. **Open Banking y fraude:**
+    - https://dojah.io/blog/open-banking-fraud-prevention
+    - https://thepaymentsassociation.org/article/key-insights-in-navigating-fraud-in-open-banking/
+
+---
+
+## 🔧 TECNOLOGÍAS Y ALGORITMOS
+
+### Algoritmos específicos:
+
+34. **XGBoost y algoritmos ML:**
+    - https://trustdecision.com/resources/blog/5-new-machine-learning-algorithms-for-fraud-detection
+    - https://www.sciencedirect.com/science/article/pii/S2772918425000104
+
+### Plataformas:
+
+35. **Feedzai:**
+    - https://www.feedzai.com/pressrelease/ai-fraud-trends-2025/
+    - https://siliconangle.com/2025/10/02/feedzai-raises-75m-2b-valuation-secures-key-role-digital-euro-fraud-prevention/
+
+---
+
+## 📊 REPORTES Y ESTUDIOS
+
+36. **Casos de estudio múltiples:**
+    - https://www.researchgate.net/publication/392812412_AI_Implementation_in_Digital_Banking_and_Financial_Services_to_Improve_Customer_Experience_21_Case_Studies_from_Banks_to_Fintechs
+    - https://www.theuxda.com/blog/ai-gold-rush-21-digital-banking-ai-case-studies-cx-transformation
+    - https://digitaldefynd.com/IQ/ai-in-banking-case-studies/
+
+---
+
+## 📝 NOTAS IMPORTANTES:
+
+- Todas las fuentes fueron accedidas entre octubre 2024 y octubre 2025
+- Los datos específicos de Scotiabank Perú son limitados en fuentes públicas
+- Las proyecciones de ROI están basadas en casos documentados de instituciones similares
+- Las regulaciones peruanas citadas están vigentes desde 2025
+
+**💡 Recomendación:** Imprime esta lista de fuentes por si tu gerente quiere verificar algún dato específico o profundizar en algún tema.
