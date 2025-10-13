@@ -1,0 +1,20 @@
+import pyodbc
+import pandas as pd
+
+# Conectar a Access
+ruta_bd = r'C:\ruta\a\tu\base_de_datos.accdb'
+cadena_conexion = (
+    r'DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};'
+    f'DBQ={ruta_bd};'
+)
+
+conexion = pyodbc.connect(cadena_conexion)
+
+# Cargar tabla completa
+df = pd.read_sql("SELECT * FROM nombre_tabla", conexion)
+
+print(df.head())
+print(df.info())
+print(df.describe())
+
+conexion.close()
