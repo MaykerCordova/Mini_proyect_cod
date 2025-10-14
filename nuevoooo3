@@ -1,29 +1,80 @@
-¡Ahora veo el problema! Tu medida `KRIS_detection_rate` está usando **columnas calculadas diferentes** que no había visto antes:
+¡AJÁ! **Ese es el problema principal**. 
 
-```DAX
-KRIS_detection_rate = DIVIDE([item_detectada_por_alerta], [item_autorizada_rechazada], 0)
-```
-
-Esto significa que:
-- **NO** estás calculando basado en `Estado = "Denegado"`
-- Estás usando **medidas o columnas** llamadas `item_detectada_por_alerta` e `item_autorizada_rechazada`
+Cuando usas un **slicer/filtro de `Periodo_numerico`** directamente, estás filtrando TODA la tabla KRIS, por eso la medida no puede "ver" el periodo anterior.
 
 ---
 
-## Solución: Adaptar la Medida del Mes Anterior
+## El Problema
 
-Necesitas usar las **mismas medidas base** en el cálculo del periodo anterior:
+Cuando seleccionas `Periodo_numerico = 202508` en un slicer:
+
+1. **Toda la tabla KRIS se filtra** a solo las filas con 202508
+2. Tu medida intenta buscar 202507, pero **ese periodo ya no está visible** por el filtro
+3. Por eso sale en blanco o 1
+
+---
+
+## Solución: Crear una Tabla Calendario (Dimensión de Periodo)
+
+Necesitas una **tabla separada de periodos** para el filtro, y relacionarla con KRIS.
+
+### **Paso 1: Crear Tabla de Periodos**
+
+```DAX
+Periodos = 
+VAR MinPeriodo = MIN(KRIS[Periodo_numerico])
+VAR MaxPeriodo = MAX(KRIS[Periodo_numerico])
+
+RETURN
+ADDCOLUMNS(
+    FILTER(
+        GENERATESERIES(MinPeriodo, MaxPeriodo),
+        MOD([Value], 100) >= 1 && MOD([Value], 100) <= 12  // Solo meses válidos
+    ),
+    "Periodo", [Value],
+    "Año", INT([Value] / 100),
+    "Mes", MOD([Value], 100),
+    "Año-Mes", FORMAT([Value], "0000-00"),
+    "Mes Nombre", 
+        SWITCH(
+            MOD([Value], 100),
+            1, "Ene", 2, "Feb", 3, "Mar", 4, "Abr",
+            5, "May", 6, "Jun", 7, "Jul", 8, "Ago",
+            9, "Sep", 10, "Oct", 11, "Nov", 12, "Dic",
+            "?"
+        )
+)
+```
+
+### **Paso 2: Crear Relación**
+
+En el modelo de datos:
+```
+Periodos[Periodo]  ──(1)──►──(*)──  KRIS[Periodo_numerico]
+```
+
+Arrastra `Periodos[Periodo]` hacia `KRIS[Periodo_numerico]` para crear la relación.
+
+### **Paso 3: Usar el Slicer con la Tabla Periodos**
+
+**IMPORTANTE:** 
+- ❌ No uses `KRIS[Periodo_numerico]` en el slicer
+- ✅ Usa `Periodos[Periodo]` o `Periodos[Año-Mes]` en el slicer
+
+---
+
+## Medidas Corregidas (usando tabla Periodos)
 
 ```DAX
 KIRS_detection_rate_MesAnterior = 
-VAR PeriodoSeleccionado = SELECTEDVALUE(KRIS[Periodo_numerico])
+VAR PeriodoSeleccionado = SELECTEDVALUE(Periodos[Periodo])
 VAR PeriodoAnterior = 
     IF(
         NOT(ISBLANK(PeriodoSeleccionado)),
         IF(
-            MOD(PeriodoSeleccionado, 100) = 1,  // Si es enero
-            (INT(PeriodoSeleccionado / 100) - 1) * 100 + 12,  // Dic año anterior
-            PeriodoSeleccionado - 1  // Mes anterior normal
+            MOD(PeriodoSeleccionado, 100) = 1,
+            (INT(PeriodoSeleccionado / 100) - 1) * 100 + 12,
+            PeriodoSeleccionado - 1
         ),
         BLANK()
     )
@@ -31,148 +82,105 @@ VAR PeriodoAnterior =
 VAR Detectada_Anterior = 
     CALCULATE(
         [item_detectada_por_alerta],
-        REMOVEFILTERS(KRIS[Periodo_numerico]),
-        KRIS[Periodo_numerico] = PeriodoAnterior
+        Periodos[Periodo] = PeriodoAnterior
     )
 
 VAR Autorizada_Anterior = 
     CALCULATE(
         [item_autorizada_rechazada],
-        REMOVEFILTERS(KRIS[Periodo_numerico]),
-        KRIS[Periodo_numerico] = PeriodoAnterior
+        Periodos[Periodo] = PeriodoAnterior
     )
 
 RETURN
 DIVIDE(Detectada_Anterior, Autorizada_Anterior, 0)
 ```
 
----
-
-## Todas las Medidas Corregidas
-
-### **1. Detection Rate Mes Anterior**
-```DAX
-KIRS_detection_rate_MesAnterior = 
-VAR PeriodoSel = SELECTEDVALUE(KRIS[Periodo_numerico])
-VAR PeriodoAnt = 
-    IF(
-        NOT(ISBLANK(PeriodoSel)),
-        IF(MOD(PeriodoSel, 100) = 1, (INT(PeriodoSel / 100) - 1) * 100 + 12, PeriodoSel - 1),
-        BLANK()
-    )
-VAR Detectada = CALCULATE([item_detectada_por_alerta], REMOVEFILTERS(KRIS[Periodo_numerico]), KRIS[Periodo_numerico] = PeriodoAnt)
-VAR Autorizada = CALCULATE([item_autorizada_rechazada], REMOVEFILTERS(KRIS[Periodo_numerico]), KRIS[Periodo_numerico] = PeriodoAnt)
-RETURN
-DIVIDE(Detectada, Autorizada, 0)
-```
-
-### **2. MoM (Month over Month)**
-```DAX
-MoM = [KRIS_detection_rate] - [KIRS_detection_rate_MesAnterior]
-```
-
-### **3. MoM %**
-```DAX
-MoM_% = DIVIDE([MoM], [KIRS_detection_rate_MesAnterior], BLANK())
-```
-
-### **4. Detection Rate Año Anterior**
 ```DAX
 KIRS_detection_rate_AñoAnterior = 
-VAR PeriodoSel = SELECTEDVALUE(KRIS[Periodo_numerico])
-VAR PeriodoAA = PeriodoSel - 100  // Año anterior
-VAR Detectada = CALCULATE([item_detectada_por_alerta], REMOVEFILTERS(KRIS[Periodo_numerico]), KRIS[Periodo_numerico] = PeriodoAA)
-VAR Autorizada = CALCULATE([item_autorizada_rechazada], REMOVEFILTERS(KRIS[Periodo_numerico]), KRIS[Periodo_numerico] = PeriodoAA)
+VAR PeriodoSeleccionado = SELECTEDVALUE(Periodos[Periodo])
+VAR PeriodoAA = PeriodoSeleccionado - 100
+
+VAR Detectada_AA = 
+    CALCULATE(
+        [item_detectada_por_alerta],
+        Periodos[Periodo] = PeriodoAA
+    )
+
+VAR Autorizada_AA = 
+    CALCULATE(
+        [item_autorizada_rechazada],
+        Periodos[Periodo] = PeriodoAA
+    )
+
 RETURN
-DIVIDE(Detectada, Autorizada, 0)
-```
-
-### **5. YoY (Year over Year)**
-```DAX
-YoY = [KRIS_detection_rate] - [KIRS_detection_rate_AñoAnterior]
-```
-
-### **6. YoY %**
-```DAX
-YoY_% = DIVIDE([YoY], [KIRS_detection_rate_AñoAnterior], BLANK())
-```
-
-### **7. Target**
-```DAX
-Target = 0.70
-```
-
-### **8. vs Target**
-```DAX
-vs_Target = [KRIS_detection_rate] - [Target]
-```
-
-### **9. vs Target %**
-```DAX
-vs_Target_% = DIVIDE([vs_Target], [Target], BLANK())
-```
-
-### **10. Semáforo vs Target**
-```DAX
-Semaforo_vs_Target = 
-VAR Diff = [vs_Target]
-RETURN
-SWITCH(
-    TRUE(),
-    Diff >= 0, "🟢",
-    Diff >= -0.05, "🟡",
-    "🔴"
-)
-```
-
-### **11. Semáforo MoM**
-```DAX
-Semaforo_MoM = 
-VAR Diff = [MoM]
-RETURN
-SWITCH(
-    TRUE(),
-    Diff > 0, "🟢",
-    Diff >= -0.02, "🟡",
-    "🔴"
-)
-```
-
-### **12. Semáforo YoY**
-```DAX
-Semaforo_YoY = 
-VAR Diff = [YoY]
-RETURN
-SWITCH(
-    TRUE(),
-    Diff > 0, "🟢",
-    Diff >= -0.03, "🟡",
-    "🔴"
-)
+DIVIDE(Detectada_AA, Autorizada_AA, 0)
 ```
 
 ---
 
-## ¿Qué son `item_detectada_por_alerta` e `item_autorizada_rechazada`?
+## Alternativa: Si NO quieres crear tabla Periodos
 
-Necesito saber si son:
-- ✅ **Medidas** (como `[total_fraude_bruto]`)
-- ❌ **Columnas** (como `KRIS[Monto_soles]`)
+Si prefieres seguir usando el filtro directo en `KRIS[Periodo_numerico]`, entonces usa `ALLSELECTED` y `TREATAS`:
 
-Si son **columnas**, la sintaxis es diferente. Dime y te ajusto la fórmula.
+```DAX
+KIRS_detection_rate_MesAnterior_SinTabla = 
+VAR TodosPeriodos = 
+    CALCULATETABLE(
+        VALUES(KRIS[Periodo_numerico]),
+        ALLSELECTED(KRIS)
+    )
+
+VAR PeriodoActual = MAX(KRIS[Periodo_numerico])
+
+VAR PeriodoAnterior = 
+    IF(
+        MOD(PeriodoActual, 100) = 1,
+        (INT(PeriodoActual / 100) - 1) * 100 + 12,
+        PeriodoActual - 1
+    )
+
+VAR ExistePeriodoAnterior = 
+    COUNTROWS(
+        FILTER(TodosPeriodos, [Periodo_numerico] = PeriodoAnterior)
+    ) > 0
+
+VAR Detectada = 
+    CALCULATE(
+        [item_detectada_por_alerta],
+        ALLSELECTED(KRIS),
+        KRIS[Periodo_numerico] = PeriodoAnterior
+    )
+
+VAR Autorizada = 
+    CALCULATE(
+        [item_autorizada_rechazada],
+        ALLSELECTED(KRIS),
+        KRIS[Periodo_numerico] = PeriodoAnterior
+    )
+
+RETURN
+IF(ExistePeriodoAnterior, DIVIDE(Detectada, Autorizada, 0), BLANK())
+```
 
 ---
 
-## Por qué te daba "1"
+## Resumen
 
-Probablemente porque estabas intentando usar `[KRIS_detection_rate]` directamente con `CALCULATE()`, pero esa medida **ya tiene un DIVIDE dentro**, entonces al aplicarle filtros se comportaba raro.
+**El problema:** Filtrar directamente por `KRIS[Periodo_numerico]` oculta los demás periodos.
 
-La solución es **recalcular desde las medidas base** (`item_detectada_por_alerta` e `item_autorizada_rechazada`) aplicando los filtros del periodo anterior.
+**La solución ideal:** 
+1. Crear tabla `Periodos` 
+2. Relacionarla con `KRIS`
+3. Usar `Periodos[Periodo]` en los slicers
+4. Las medidas funcionarán correctamente
+
+**La solución alternativa:** 
+Usar `ALLSELECTED()` en las medidas, pero es más complejo y propenso a errores.
 
 ---
 
-Prueba esta versión y dime:
-1. ¿Ahora sí cambia el valor cuando seleccionas diferentes periodos?
-2. ¿Los valores tienen sentido? 
+¿Qué prefieres hacer?
+- **A)** Crear la tabla Periodos (recomendado)
+- **B)** Intentar con ALLSELECTED sin crear tabla adicional
 
 🎯
