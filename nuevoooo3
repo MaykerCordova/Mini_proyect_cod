@@ -1,142 +1,178 @@
-¡Perfecto! Entendido, descartamos el año fiscal y trabajamos solo con la columna **Periodo**.
+¡Ahora veo el problema! Tu medida `KRIS_detection_rate` está usando **columnas calculadas diferentes** que no había visto antes:
 
-## Sí, SÍ puedes hacer la comparación mes a mes usando solo la columna Periodo
+```DAX
+KRIS_detection_rate = DIVIDE([item_detectada_por_alerta], [item_autorizada_rechazada], 0)
+```
 
-La clave es crear medidas que calculen dinámicamente el periodo anterior basándose en el formato YYYYMM.
+Esto significa que:
+- **NO** estás calculando basado en `Estado = "Denegado"`
+- Estás usando **medidas o columnas** llamadas `item_detectada_por_alerta` e `item_autorizada_rechazada`
 
 ---
 
-## Medidas DAX Simplificadas (sin tabla Calendario)
+## Solución: Adaptar la Medida del Mes Anterior
 
-### **1. Detection Rate (actual)**
-```DAX
-Detection_Rate = 
-DIVIDE(
-    CALCULATE(SUM(KRIS[Monto_soles]), KRIS[Estado] = "Denegado"),
-    SUM(KRIS[Monto_soles]),
-    0
-)
-```
+Necesitas usar las **mismas medidas base** en el cálculo del periodo anterior:
 
-### **2. Detection Rate - Mes Anterior**
 ```DAX
-Detection_Rate_MesAnterior = 
-VAR PeriodoActual = MAX(KRIS[Periodo])
+KIRS_detection_rate_MesAnterior = 
+VAR PeriodoSeleccionado = SELECTEDVALUE(KRIS[Periodo_numerico])
 VAR PeriodoAnterior = 
     IF(
-        MOD(PeriodoActual, 100) = 1,  // Si es enero (01)
-        (INT(PeriodoActual / 100) - 1) * 100 + 12,  // Dic del año anterior
-        PeriodoActual - 1  // Mes anterior normal
+        NOT(ISBLANK(PeriodoSeleccionado)),
+        IF(
+            MOD(PeriodoSeleccionado, 100) = 1,  // Si es enero
+            (INT(PeriodoSeleccionado / 100) - 1) * 100 + 12,  // Dic año anterior
+            PeriodoSeleccionado - 1  // Mes anterior normal
+        ),
+        BLANK()
     )
+
+VAR Detectada_Anterior = 
+    CALCULATE(
+        [item_detectada_por_alerta],
+        REMOVEFILTERS(KRIS[Periodo_numerico]),
+        KRIS[Periodo_numerico] = PeriodoAnterior
+    )
+
+VAR Autorizada_Anterior = 
+    CALCULATE(
+        [item_autorizada_rechazada],
+        REMOVEFILTERS(KRIS[Periodo_numerico]),
+        KRIS[Periodo_numerico] = PeriodoAnterior
+    )
+
 RETURN
-CALCULATE(
-    [Detection_Rate],
-    KRIS[Periodo] = PeriodoAnterior
-)
+DIVIDE(Detectada_Anterior, Autorizada_Anterior, 0)
 ```
 
-### **3. MoM (Diferencia vs Mes Anterior)**
-```DAX
-MoM = [Detection_Rate] - [Detection_Rate_MesAnterior]
-```
+---
 
-### **4. MoM % (Porcentaje de cambio)**
-```DAX
-MoM_% = 
-DIVIDE(
-    [MoM],
-    [Detection_Rate_MesAnterior],
-    BLANK()
-)
-```
+## Todas las Medidas Corregidas
 
-### **5. Detection Rate - Año Anterior (mismo mes)**
+### **1. Detection Rate Mes Anterior**
 ```DAX
-Detection_Rate_AñoAnterior = 
-VAR PeriodoActual = MAX(KRIS[Periodo])
-VAR PeriodoAñoAnterior = PeriodoActual - 100  // Ejemplo: 202508 - 100 = 202408
+KIRS_detection_rate_MesAnterior = 
+VAR PeriodoSel = SELECTEDVALUE(KRIS[Periodo_numerico])
+VAR PeriodoAnt = 
+    IF(
+        NOT(ISBLANK(PeriodoSel)),
+        IF(MOD(PeriodoSel, 100) = 1, (INT(PeriodoSel / 100) - 1) * 100 + 12, PeriodoSel - 1),
+        BLANK()
+    )
+VAR Detectada = CALCULATE([item_detectada_por_alerta], REMOVEFILTERS(KRIS[Periodo_numerico]), KRIS[Periodo_numerico] = PeriodoAnt)
+VAR Autorizada = CALCULATE([item_autorizada_rechazada], REMOVEFILTERS(KRIS[Periodo_numerico]), KRIS[Periodo_numerico] = PeriodoAnt)
 RETURN
-CALCULATE(
-    [Detection_Rate],
-    KRIS[Periodo] = PeriodoAñoAnterior
-)
+DIVIDE(Detectada, Autorizada, 0)
 ```
 
-### **6. YoY (Diferencia vs Año Anterior)**
+### **2. MoM (Month over Month)**
 ```DAX
-YoY = [Detection_Rate] - [Detection_Rate_AñoAnterior]
+MoM = [KRIS_detection_rate] - [KIRS_detection_rate_MesAnterior]
 ```
 
-### **7. YoY % (Porcentaje de cambio anual)**
+### **3. MoM %**
 ```DAX
-YoY_% = 
-DIVIDE(
-    [YoY],
-    [Detection_Rate_AñoAnterior],
-    BLANK()
-)
+MoM_% = DIVIDE([MoM], [KIRS_detection_rate_MesAnterior], BLANK())
 ```
 
-### **8. Target**
+### **4. Detection Rate Año Anterior**
+```DAX
+KIRS_detection_rate_AñoAnterior = 
+VAR PeriodoSel = SELECTEDVALUE(KRIS[Periodo_numerico])
+VAR PeriodoAA = PeriodoSel - 100  // Año anterior
+VAR Detectada = CALCULATE([item_detectada_por_alerta], REMOVEFILTERS(KRIS[Periodo_numerico]), KRIS[Periodo_numerico] = PeriodoAA)
+VAR Autorizada = CALCULATE([item_autorizada_rechazada], REMOVEFILTERS(KRIS[Periodo_numerico]), KRIS[Periodo_numerico] = PeriodoAA)
+RETURN
+DIVIDE(Detectada, Autorizada, 0)
+```
+
+### **5. YoY (Year over Year)**
+```DAX
+YoY = [KRIS_detection_rate] - [KIRS_detection_rate_AñoAnterior]
+```
+
+### **6. YoY %**
+```DAX
+YoY_% = DIVIDE([YoY], [KIRS_detection_rate_AñoAnterior], BLANK())
+```
+
+### **7. Target**
 ```DAX
 Target = 0.70
 ```
 
-### **9. vs Target**
+### **8. vs Target**
 ```DAX
-vs_Target = [Detection_Rate] - [Target]
+vs_Target = [KRIS_detection_rate] - [Target]
 ```
 
-### **10. vs Target %**
+### **9. vs Target %**
 ```DAX
-vs_Target_% = 
-DIVIDE(
-    [vs_Target],
-    [Target],
-    BLANK()
-)
+vs_Target_% = DIVIDE([vs_Target], [Target], BLANK())
 ```
 
-### **11. Semáforo (Indicador Visual)**
+### **10. Semáforo vs Target**
 ```DAX
-Semaforo = 
+Semaforo_vs_Target = 
 VAR Diff = [vs_Target]
 RETURN
 SWITCH(
     TRUE(),
-    Diff >= 0, "🟢",           // Verde: cumple o supera
-    Diff >= -0.05, "🟡",       // Amarillo: hasta 5% debajo
-    "🔴"                       // Rojo: más de 5% debajo
+    Diff >= 0, "🟢",
+    Diff >= -0.05, "🟡",
+    "🔴"
+)
+```
+
+### **11. Semáforo MoM**
+```DAX
+Semaforo_MoM = 
+VAR Diff = [MoM]
+RETURN
+SWITCH(
+    TRUE(),
+    Diff > 0, "🟢",
+    Diff >= -0.02, "🟡",
+    "🔴"
+)
+```
+
+### **12. Semáforo YoY**
+```DAX
+Semaforo_YoY = 
+VAR Diff = [YoY]
+RETURN
+SWITCH(
+    TRUE(),
+    Diff > 0, "🟢",
+    Diff >= -0.03, "🟡",
+    "🔴"
 )
 ```
 
 ---
 
-## Ejemplo de Uso
+## ¿Qué son `item_detectada_por_alerta` e `item_autorizada_rechazada`?
 
-Si seleccionas **Periodo = 202508** en un filtro:
+Necesito saber si son:
+- ✅ **Medidas** (como `[total_fraude_bruto]`)
+- ❌ **Columnas** (como `KRIS[Monto_soles]`)
 
-| Métrica | Valor | Explicación |
-|---------|-------|-------------|
-| Detection_Rate | 0.68 | 68% del periodo actual (202508) |
-| Detection_Rate_MesAnterior | 0.65 | 65% del periodo 202507 |
-| MoM | +0.03 | +3 puntos porcentuales vs mes anterior |
-| MoM_% | +4.6% | Creció 4.6% respecto al mes anterior |
-| Detection_Rate_AñoAnterior | 0.70 | 70% del periodo 202408 |
-| YoY | -0.02 | -2 puntos porcentuales vs año anterior |
-| Target | 0.70 | Objetivo 70% |
-| vs_Target | -0.02 | -2 puntos debajo del objetivo |
-| Semaforo | 🟡 | Amarillo (debajo pero cerca del target) |
+Si son **columnas**, la sintaxis es diferente. Dime y te ajusto la fórmula.
 
 ---
 
-## ¿Funciona sin tabla Calendario?
+## Por qué te daba "1"
 
-✅ **SÍ**, estas medidas funcionan directamente con tu columna `KRIS[Periodo]` sin necesidad de crear una tabla calendario adicional.
+Probablemente porque estabas intentando usar `[KRIS_detection_rate]` directamente con `CALCULATE()`, pero esa medida **ya tiene un DIVIDE dentro**, entonces al aplicarle filtros se comportaba raro.
 
-La lógica:
-- `PeriodoActual - 1` = mes anterior (202508 → 202507)
-- `PeriodoActual - 100` = año anterior (202508 → 202408)
-- Maneja el caso especial de enero correctamente (202501 → 202412)
+La solución es **recalcular desde las medidas base** (`item_detectada_por_alerta` e `item_autorizada_rechazada`) aplicando los filtros del periodo anterior.
 
-¿Quieres que te ayude a crear alguna visualización específica con estas medidas?
+---
+
+Prueba esta versión y dime:
+1. ¿Ahora sí cambia el valor cuando seleccionas diferentes periodos?
+2. ¿Los valores tienen sentido? 
+
+🎯
