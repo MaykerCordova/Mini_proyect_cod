@@ -1,3 +1,64 @@
+KIRS_detection_rate_MesAnterior = 
+VAR PeriodoSel = SELECTEDVALUE(Periodos[Periodo])
+VAR PeriodoAnt = 
+    IF(
+        NOT(ISBLANK(PeriodoSel)),
+        IF(MOD(PeriodoSel, 100) = 1, (INT(PeriodoSel / 100) - 1) * 100 + 12, PeriodoSel - 1),
+        BLANK()
+    )
+
+// Calcular TODAS las medidas base con el filtro del periodo anterior
+VAR TotalDenegado_Ant = 
+    CALCULATE(
+        [total_denegado],
+        ALL(Periodos),
+        KRIS[Periodo_numerico] = PeriodoAnt
+    )
+
+VAR TotalRecupero_Ant = 
+    CALCULATE(
+        [total_recupero],
+        ALL(Periodos),
+        KRIS[Periodo_numerico] = PeriodoAnt
+    )
+
+VAR Ataque_Ant = 
+    CALCULATE(
+        [ataque],
+        ALL(Periodos),
+        KRIS[Periodo_numerico] = PeriodoAnt
+    )
+
+VAR MontoNetoCat_Ant = 
+    CALCULATE(
+        [monto_neto_Cat],
+        ALL(Periodos),
+        KRIS[Periodo_numerico] = PeriodoAnt
+    )
+
+VAR MontoSuplantacion_Ant = 
+    CALCULATE(
+        [monto_suplantacion],
+        ALL(Periodos),
+        KRIS[Periodo_numerico] = PeriodoAnt
+    )
+
+VAR MontoAtipicos_Ant = 
+    CALCULATE(
+        [monto_atipicos],
+        ALL(Periodos),
+        KRIS[Periodo_numerico] = PeriodoAnt
+    )
+
+// Reconstruir las medidas compuestas
+VAR Detectada_Anterior = TotalDenegado_Ant + TotalRecupero_Ant
+VAR Autorizada_Anterior = Ataque_Ant - MontoNetoCat_Ant - MontoSuplantacion_Ant - MontoAtipicos_Ant
+
+RETURN
+DIVIDE(Detectada_Anterior, Autorizada_Anterior, 0)
+
+
+
 ¡AJÁ! **Ese es el problema principal**. 
 
 Cuando usas un **slicer/filtro de `Periodo_numerico`** directamente, estás filtrando TODA la tabla KRIS, por eso la medida no puede "ver" el periodo anterior.
