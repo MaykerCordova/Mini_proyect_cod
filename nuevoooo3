@@ -1,3 +1,23 @@
+mmmm
+mm mm
+
+
+KIRS_detection_rate_MesAnterior = 
+VAR PeriodoSel = SELECTEDVALUE(Periodos[Periodo])
+VAR PeriodoAnt = IF(MOD(PeriodoSel, 100) = 1, (INT(PeriodoSel / 100) - 1) * 100 + 12, PeriodoSel - 1)
+
+RETURN
+IF(
+    NOT(ISBLANK(PeriodoAnt)),
+    CALCULATE(
+        [KRIS_detection_rate],
+        REMOVEFILTERS(Periodos),
+        USERELATIONSHIP(Periodos[Periodo], KRIS[Periodo_numerico]),
+        Periodos[Periodo] = PeriodoAnt
+    ),
+    BLANK()
+)
+
 KIRS_detection_rate_MesAnterior = 
 VAR PeriodoSel = SELECTEDVALUE(Periodos[Periodo])
 VAR PeriodoAnt = 
