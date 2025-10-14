@@ -1,0 +1,142 @@
+¡Perfecto! Entendido, descartamos el año fiscal y trabajamos solo con la columna **Periodo**.
+
+## Sí, SÍ puedes hacer la comparación mes a mes usando solo la columna Periodo
+
+La clave es crear medidas que calculen dinámicamente el periodo anterior basándose en el formato YYYYMM.
+
+---
+
+## Medidas DAX Simplificadas (sin tabla Calendario)
+
+### **1. Detection Rate (actual)**
+```DAX
+Detection_Rate = 
+DIVIDE(
+    CALCULATE(SUM(KRIS[Monto_soles]), KRIS[Estado] = "Denegado"),
+    SUM(KRIS[Monto_soles]),
+    0
+)
+```
+
+### **2. Detection Rate - Mes Anterior**
+```DAX
+Detection_Rate_MesAnterior = 
+VAR PeriodoActual = MAX(KRIS[Periodo])
+VAR PeriodoAnterior = 
+    IF(
+        MOD(PeriodoActual, 100) = 1,  // Si es enero (01)
+        (INT(PeriodoActual / 100) - 1) * 100 + 12,  // Dic del año anterior
+        PeriodoActual - 1  // Mes anterior normal
+    )
+RETURN
+CALCULATE(
+    [Detection_Rate],
+    KRIS[Periodo] = PeriodoAnterior
+)
+```
+
+### **3. MoM (Diferencia vs Mes Anterior)**
+```DAX
+MoM = [Detection_Rate] - [Detection_Rate_MesAnterior]
+```
+
+### **4. MoM % (Porcentaje de cambio)**
+```DAX
+MoM_% = 
+DIVIDE(
+    [MoM],
+    [Detection_Rate_MesAnterior],
+    BLANK()
+)
+```
+
+### **5. Detection Rate - Año Anterior (mismo mes)**
+```DAX
+Detection_Rate_AñoAnterior = 
+VAR PeriodoActual = MAX(KRIS[Periodo])
+VAR PeriodoAñoAnterior = PeriodoActual - 100  // Ejemplo: 202508 - 100 = 202408
+RETURN
+CALCULATE(
+    [Detection_Rate],
+    KRIS[Periodo] = PeriodoAñoAnterior
+)
+```
+
+### **6. YoY (Diferencia vs Año Anterior)**
+```DAX
+YoY = [Detection_Rate] - [Detection_Rate_AñoAnterior]
+```
+
+### **7. YoY % (Porcentaje de cambio anual)**
+```DAX
+YoY_% = 
+DIVIDE(
+    [YoY],
+    [Detection_Rate_AñoAnterior],
+    BLANK()
+)
+```
+
+### **8. Target**
+```DAX
+Target = 0.70
+```
+
+### **9. vs Target**
+```DAX
+vs_Target = [Detection_Rate] - [Target]
+```
+
+### **10. vs Target %**
+```DAX
+vs_Target_% = 
+DIVIDE(
+    [vs_Target],
+    [Target],
+    BLANK()
+)
+```
+
+### **11. Semáforo (Indicador Visual)**
+```DAX
+Semaforo = 
+VAR Diff = [vs_Target]
+RETURN
+SWITCH(
+    TRUE(),
+    Diff >= 0, "🟢",           // Verde: cumple o supera
+    Diff >= -0.05, "🟡",       // Amarillo: hasta 5% debajo
+    "🔴"                       // Rojo: más de 5% debajo
+)
+```
+
+---
+
+## Ejemplo de Uso
+
+Si seleccionas **Periodo = 202508** en un filtro:
+
+| Métrica | Valor | Explicación |
+|---------|-------|-------------|
+| Detection_Rate | 0.68 | 68% del periodo actual (202508) |
+| Detection_Rate_MesAnterior | 0.65 | 65% del periodo 202507 |
+| MoM | +0.03 | +3 puntos porcentuales vs mes anterior |
+| MoM_% | +4.6% | Creció 4.6% respecto al mes anterior |
+| Detection_Rate_AñoAnterior | 0.70 | 70% del periodo 202408 |
+| YoY | -0.02 | -2 puntos porcentuales vs año anterior |
+| Target | 0.70 | Objetivo 70% |
+| vs_Target | -0.02 | -2 puntos debajo del objetivo |
+| Semaforo | 🟡 | Amarillo (debajo pero cerca del target) |
+
+---
+
+## ¿Funciona sin tabla Calendario?
+
+✅ **SÍ**, estas medidas funcionan directamente con tu columna `KRIS[Periodo]` sin necesidad de crear una tabla calendario adicional.
+
+La lógica:
+- `PeriodoActual - 1` = mes anterior (202508 → 202507)
+- `PeriodoActual - 100` = año anterior (202508 → 202408)
+- Maneja el caso especial de enero correctamente (202501 → 202412)
+
+¿Quieres que te ayude a crear alguna visualización específica con estas medidas?
