@@ -1,3 +1,6 @@
+=SI(O(ESBLANCO([@[DNI/CE/RUC]]);[@[DNI/CE/RUC]]="(sin información)");"";SI(Y(ESNUMERO(VALOR([@[DNI/CE/RUC]])*1);LARGO([@[DNI/CE/RUC]])=8);"Peruano";SI(Y(ESNUMERO(VALOR([@[DNI/CE/RUC]])*1);LARGO([@[DNI/CE/RUC]])=11);"Empresa";SI(O(Y(ESNUMERO(VALOR([@[DNI/CE/RUC]])*1);LARGO([@[DNI/CE/RUC]])=9);ESERROR(VALOR([@[DNI/CE/RUC]])*1));"Extranjero";""))))
+
+
 ¡Perfecto! Ahora sí entendí correctamente. Aquí está la fórmula:
 
 **Fórmula para Excel Online:**
