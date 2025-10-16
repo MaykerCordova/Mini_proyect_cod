@@ -1,29 +1,20 @@
-=SI(O(ESBLANCO([@[DNI/CE/RUC]]);[@[DNI/CE/RUC]]="(sin información)");"";SI(Y(ESNUMERO(VALOR([@[DNI/CE/RUC]])*1);LARGO([@[DNI/CE/RUC]])=8);"Peruano";SI(Y(ESNUMERO(VALOR([@[DNI/CE/RUC]])*1);LARGO([@[DNI/CE/RUC]])=11);"Empresa";SI(O(Y(ESNUMERO(VALOR([@[DNI/CE/RUC]])*1);LARGO([@[DNI/CE/RUC]])=9);ESERROR(VALOR([@[DNI/CE/RUC]])*1));"Extranjero";""))))
-
-
-¡Perfecto! Ahora sí entendí correctamente. Aquí está la fórmula:
-
-**Fórmula para Excel Online:**
-
-Suponiendo que la columna DNI/CE/RUC está en **B** y la fórmula va en **C** (Nacionalidad), fila 2:
+Perfecto, ahora entiendo. Necesitamos que ignore los guiones y las celdas vacías. Aquí está la fórmula corregida:
 
 ```excel
-=SI(O(ESBLANCO(B2);B2="(sin información)");"";SI(Y(ESNUMERO(VALOR(B2)*1);LARGO(B2)=8);"Peruano";SI(LARGO(B2)=11;"Empresa";SI(O(LARGO(B2)=9;ESNUMERO(HALLAR("CE";B2));ESNUMERO(HALLAR("CPP";B2)));"Extranjero";""))))
+=SI(O(ESBLANCO([@[DNI/CE/RUC]]);[@[DNI/CE/RUC]]="-");"";SI(LARGO([@[DNI/CE/RUC]])=8;"Peruano";SI(LARGO([@[DNI/CE/RUC]])=11;"Empresa";SI(O(LARGO([@[DNI/CE/RUC]])=9;ESNUMERO(ENCONTRAR("CE";[@[DNI/CE/RUC]]));ESNUMERO(ENCONTRAR("CPP";[@[DNI/CE/RUC]])));"Extranjero";""))))
 ```
 
-**Si esa versión da error, usa esta (más compatible):**
+**Esta fórmula hace:**
+1. Si la celda está vacía o tiene solo un guion "-" → deja en **blanco**
+2. Si tiene exactamente 8 dígitos → **"Peruano"**
+3. Si tiene exactamente 11 dígitos → **"Empresa"**
+4. Si tiene exactamente 9 dígitos O contiene "CE" O contiene "CPP" → **"Extranjero"**
+5. Cualquier otro caso → en blanco
 
-```excel
-=SI(O(ESBLANCO(B2);B2="(sin información)");"";SI(Y(ESNUMERO(VALOR(B2)*1);LARGO(B2)=8);"Peruano";SI(Y(ESNUMERO(VALOR(B2)*1);LARGO(B2)=11);"Empresa";SI(O(Y(ESNUMERO(VALOR(B2)*1);LARGO(B2)=9);ESERROR(VALOR(B2)*1));"Extranjero";""))))
-```
-
-**La lógica es:**
-1. Si está en blanco o dice "(sin información)" → deja vacío
-2. Si tiene 8 dígitos numéricos → **"Peruano"**
-3. Si tiene 11 dígitos numéricos → **"Empresa"**
-4. Si tiene 9 dígitos O contiene "CE" O contiene "CPP" → **"Extranjero"**
-5. Cualquier otro caso → vacío
-
-Copia la fórmula en C2 y luego arrástrala hacia abajo para aplicarla a todas las filas.
+**Recuerda:** 
+1. Borra el contenido de la columna O
+2. Asegúrate que esté en formato **"General"** (no texto)
+3. Pega la fórmula
+4. Presiona Enter
 
 ¿Probamos?
