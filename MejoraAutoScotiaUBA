@@ -1,0 +1,198 @@
+import pandas as pd
+from datetime import datetime
+
+# ========== TU CÓDIGO ORIGINAL ==========
+
+# Cargar datos
+data = df.copy()
+
+# Aplicar filtro original
+filtro3 = (
+    (data['ACF-Tipo de Resultado Caso de Investigacion'] == '1') &
+    (data['ACF-Cod Rpta'] != '000') &
+    (data['ACF-Cod Rpta'] != '012') &
+    (data['ACF-Cod Rpta'] != '00') &
+    (data['ACF-Cod Rpta'] != '0') &
+    (data['ACF-Tipo Prod TC'] != 'TD') &
+    (data['ACF-Organizacion'] == '000005') &
+    (data['ACF-Bin'] != '891200') &
+    (data['ACF-Acción Tomada'] != '757') &
+    (data['ACF-Cod Trx'].isin(['0', '00', '1', '99', '11'])) &
+    (~data['ACF-Código CIO/Agencia/Oficina Origen'].str.contains('SCOTIABANK')) &
+    (data['ACF-ID Adq'] != '696912')
+)
+
+data_filtro = data[filtro3]
+
+# Seleccionar columnas necesarias
+data_final = data_filtro[['ACF-Número Trx',
+                          'ACF-Fecha TRX',
+                          'ACF-Tarjeta registro 750',
+                          'ACF-Código Banco Destino Transf# Inmediata',
+                          'ACF-Cod Moneda Trx',
+                          'ACF-Monto Original TRX',
+                          'ACF-Autorización',
+                          'ACF-Nombre/Localización Comercio',
+                          'ACF-Fecha Cierre Caso',
+                          'ACF-Hora Fin Caso',
+                          'Nombre del Cliente']].copy()
+
+# Crear códigos de reclamo
+data_final['COD RECLAMO O CORRELATIVO'] = (
+    'REC-' + data_final['ACF-Número Trx'].astype(str)
+)
+
+data_final['COD TIPO RECLAMO'] = 'TC40'
+
+# Crear número de tarjeta concatenado
+data_final['Numero de Tarjeta'] = (
+    data_final['ACF-Tarjeta registro 750'].str[:6] +
+    data_final['ACF-Código Banco Destino Transf# Inmediata'].astype(str) +
+    data_final['ACF-Tarjeta registro 750'].str[-4:]
+)
+
+# ========== CONVERTIR FECHAS Y HORAS ==========
+
+# Convertir fecha de transacción
+data_final['ACF-Fecha TRX'] = pd.to_datetime(data_final['ACF-Fecha TRX'], dayfirst=True)
+
+# ⚠️ IMPORTANTE: Convertir fecha y hora de cierre ANTES de renombrar
+# Esto nos permite crear un timestamp completo para filtrar con precisión
+data_final['ACF-Fecha Cierre Caso'] = pd.to_datetime(
+    data_final['ACF-Fecha Cierre Caso'], 
+    dayfirst=True
+)
+
+data_final['ACF-Hora Fin Caso'] = pd.to_datetime(data_final['ACF-Hora Fin Caso'])
+
+# Crear columna de TIMESTAMP COMPLETO (Fecha + Hora de cierre)
+data_final['TIMESTAMP_CIERRE'] = pd.to_datetime(
+    data_final['ACF-Fecha Cierre Caso'].dt.strftime('%Y-%m-%d') + ' ' +
+    data_final['ACF-Hora Fin Caso'].dt.strftime('%H:%M:%S')
+)
+
+print("📅 Rango de fechas de cierre en los datos:")
+print(f"   Desde: {data_final['TIMESTAMP_CIERRE'].min()}")
+print(f"   Hasta: {data_final['TIMESTAMP_CIERRE'].max()}")
+
+# ========== FILTRO POR FECHA/HORA DE ÚLTIMO REPORTE ==========
+
+# 🎯 CONFIGURA AQUÍ LA FECHA Y HORA DEL ÚLTIMO REPORTE ENVIADO
+# Formato: 'YYYY-MM-DD HH:MM:SS'
+FECHA_HORA_ULTIMO_REPORTE = '2025-10-16 23:59:59'  # Ajusta según tu último corte
+
+# Convertir a datetime
+fecha_corte = pd.to_datetime(FECHA_HORA_ULTIMO_REPORTE)
+
+print(f"\n🔍 Filtro aplicado:")
+print(f"   Fecha/Hora corte último reporte: {fecha_corte}")
+print(f"   Solo se incluirán casos cerrados DESPUÉS de esta fecha/hora")
+
+# Aplicar el filtro: solo casos cerrados DESPUÉS del último reporte
+data_final_filtrado = data_final[
+    data_final['TIMESTAMP_CIERRE'] > fecha_corte
+].copy()
+
+print(f"\n📊 Resultados del filtro:")
+print(f"   Total de registros antes del filtro: {len(data_final)}")
+print(f"   Registros excluidos (ya enviados): {len(data_final) - len(data_final_filtrado)}")
+print(f"   Registros NUEVOS para este reporte: {len(data_final_filtrado)}")
+
+
+# ========== CONTINUAR CON TU PROCESAMIENTO ==========
+
+# Formatear fechas para el reporte final
+data_final_filtrado['ACF-Fecha TRX'] = data_final_filtrado['ACF-Fecha TRX'].dt.strftime('%d/%m/%Y')
+data_final_filtrado['ACF-Fecha Cierre Caso'] = data_final_filtrado['ACF-Fecha Cierre Caso'].dt.strftime('%d/%m/%Y')
+data_final_filtrado['ACF-Hora Fin Caso'] = data_final_filtrado['ACF-Hora Fin Caso'].dt.strftime('%H:%M:%S')
+
+# Renombrar columnas
+data_final_filtrado = data_final_filtrado.rename(columns={
+    'Numero de Tarjeta': 'NUMERO DE TARJETA',
+    'ACF-Fecha TRX': 'FECHA TRANSAC',
+    'ACF-Cod Moneda Trx': 'MONEDA',
+    'ACF-Monto Original TRX': 'IMPORTE RECLAMADO',
+    'ACF-Número Trx': 'TRACE',
+    'ACF-Nombre/Localización Comercio': 'COMERCIO',
+    'ACF-Fecha Cierre Caso': 'FECHA RECLAMO',
+    'ACF-Hora Fin Caso': 'HORA',
+    'ACF-Autorización': 'CODIGO AUTORIZACION',
+    'Nombre del Cliente': 'NOMBRES CLIENTE'
+})
+
+# Filtrar por mes (Octubre 2025)
+data_final_filtrado['FECHA TRANSAC'] = pd.to_datetime(
+    data_final_filtrado['FECHA TRANSAC'], 
+    format='%d/%m/%Y'
+)
+
+df_oct = data_final_filtrado[
+    (data_final_filtrado['FECHA TRANSAC'].dt.month == 10) & 
+    (data_final_filtrado['FECHA TRANSAC'].dt.year == 2025)
+].copy()
+
+print(f"\n📅 Después de filtrar por mes (Octubre 2025): {len(df_oct)} registros")
+
+# Eliminar columnas temporales
+df_oct = df_oct.drop(columns=[
+    'ACF-Tarjeta registro 750', 
+    'ACF-Código Banco Destino Transf# Inmediata',
+    'TIMESTAMP_CIERRE'  # Eliminar columna auxiliar
+], errors='ignore')
+
+# Limpiar código de autorización
+aut = df_oct['CODIGO AUTORIZACION'].astype('string')
+aut = aut.replace(r'^\s*$', pd.NA, regex=True)
+df_oct['CODIGO AUTORIZACION'] = aut.fillna('00000')
+
+# Agregar columnas adicionales
+df_oct['COMENTARIOS'] = 'Fraude Rechazado'
+df_oct['RESULTADO'] = ''
+
+# Ordenar columnas
+col_ord = ['RESULTADO', 'COD RECLAMO O CORRELATIVO', 'COD TIPO RECLAMO', 
+           'NUMERO DE TARJETA', 'FECHA TRANSAC', 'MONEDA', 'IMPORTE RECLAMADO',
+           'CODIGO AUTORIZACION', 'TRACE', 'COMERCIO', 'FECHA RECLAMO', 
+           'HORA', 'NOMBRES CLIENTE', 'COMENTARIOS']
+
+df_oct = df_oct[col_ord]
+
+# Ordenar por número de tarjeta y fecha
+df_oct.sort_values(
+    by=['NUMERO DE TARJETA', 'FECHA TRANSAC'], 
+    ascending=[True, True], 
+    inplace=True
+)
+
+# Eliminar duplicados (mantener primer registro por tarjeta)
+d = df_oct.drop_duplicates(subset=['NUMERO DE TARJETA'], keep='first')
+
+print(f"\n🔄 Después de eliminar duplicados por tarjeta: {len(d)} registros")
+
+
+# ========== EXPORTAR ==========
+
+# Exportar el reporte
+fecha_corte_actual = datetime.now().strftime('%Y%m%d')
+nombre_archivo = f'resultados_final_{fecha_corte_actual}.xlsx'
+
+d.to_excel(nombre_archivo, index=False)
+
+print(f"\n" + "="*70)
+print("✅ REPORTE GENERADO EXITOSAMENTE")
+print("="*70)
+print(f"📄 Archivo: {nombre_archivo}")
+print(f"📊 Total de registros en el reporte: {len(d)}")
+print(f"📅 Fecha de generación: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
+print(f"🕐 Corte del último reporte: {FECHA_HORA_ULTIMO_REPORTE}")
+print("="*70)
+
+# Mostrar muestra de los datos exportados
+print("\n🔎 MUESTRA DE REGISTROS EN EL REPORTE:")
+print(d[['NUMERO DE TARJETA', 'FECHA TRANSAC', 'FECHA RECLAMO', 
+         'HORA', 'IMPORTE RECLAMADO']].head(10).to_string(index=False))
+
+print("\n💡 IMPORTANTE PARA EL PRÓXIMO REPORTE:")
+print(f"   Actualiza la variable FECHA_HORA_ULTIMO_REPORTE a:")
+print(f"   '{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}'")
+print("="*70)
