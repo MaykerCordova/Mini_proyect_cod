@@ -1,0 +1,47 @@
+library(fitdistrplus)
+library(ggplot2)
+
+analizar_distribucion <- function(datos) {
+  
+  # 1. Estadísticas descriptivas
+  cat("=== Estadísticas Descriptivas ===\n")
+  print(summary(datos))
+  cat("\nAsimetría:", moments::skewness(datos))
+  cat("\nCurtosis:", moments::kurtosis(datos), "\n\n")
+  
+  # 2. Gráfico exploratorio
+  descdist(datos, boot = 100)
+  
+  # 3. Ajustar distribuciones comunes
+  fit_norm <- fitdist(datos, "norm")
+  fit_lnorm <- fitdist(datos, "lnorm")
+  
+  # Para datos positivos, agregar más distribuciones
+  if(min(datos) > 0) {
+    fit_exp <- fitdist(datos, "exp")
+    fit_gamma <- fitdist(datos, "gamma")
+    fit_weibull <- fitdist(datos, "weibull")
+    
+    fits <- list(Normal = fit_norm, LogNormal = fit_lnorm, 
+                 Exponencial = fit_exp, Gamma = fit_gamma,
+                 Weibull = fit_weibull)
+  } else {
+    fits <- list(Normal = fit_norm, LogNormal = fit_lnorm)
+  }
+  
+  # 4. Comparar visualmente
+  par(mfrow = c(2, 2))
+  denscomp(fits, legendtext = names(fits))
+  qqcomp(fits, legendtext = names(fits))
+  cdfcomp(fits, legendtext = names(fits))
+  ppcomp(fits, legendtext = names(fits))
+  
+  # 5. Comparar con criterios estadísticos
+  cat("\n=== Comparación de Ajustes ===\n")
+  gofstat(fits)
+  
+  return(fits)
+}
+
+# Usar la función
+resultado <- analizar_distribucion(datos)
