@@ -1,3 +1,39 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%
+library(fitdistrplus)
+
+# Tus datos
+datos <- c(...)  # Reemplaza con tu variable
+
+# Ajustar diferentes distribuciones
+fit_normal <- fitdist(datos, "norm")
+fit_lognormal <- fitdist(datos, "lnorm")
+fit_exponencial <- fitdist(datos, "exp")
+fit_gamma <- fitdist(datos, "gamma")
+
+# Resumen de los ajustes
+summary(fit_normal)
+summary(fit_lognormal)
+summary(fit_exponencial)
+summary(fit_gamma)
+
+# Comparación visual
+par(mfrow = c(2, 2))
+plot(fit_normal)
+plot(fit_lognormal)
+plot(fit_exponencial)
+plot(fit_gamma)
+
+# Comparar ajustes con criterios AIC y BIC (menor es mejor)
+comparacion <- data.frame(
+  Distribucion = c("Normal", "Log-Normal", "Exponencial", "Gamma"),
+  AIC = c(fit_normal$aic, fit_lognormal$aic, 
+          fit_exponencial$aic, fit_gamma$aic),
+  BIC = c(fit_normal$bic, fit_lognormal$bic, 
+          fit_exponencial$bic, fit_gamma$bic)
+)
+print(comparacion)
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%
 import win32com.client
 import zipfile
 import os
