@@ -1,0 +1,950 @@
+---
+title: "Análisis de Capacidad Instalada y Distribución Equitativa de Personal"
+subtitle: "Sistema de Gestión de Alertas de Fraude - Septiembre 2025"
+author: "Análisis Estadístico Avanzado"
+date: "`r format(Sys.Date(), '%d de %B de %Y')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    theme: cosmo
+    highlight: tango
+    code_folding: hide
+    fig_width: 12
+    fig_height: 7
+  pdf_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    fig_width: 10
+    fig_height: 6
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.align = 'center',
+  dpi = 300
+)
+```
+
+```{r librerias, include=FALSE}
+# Instalar y cargar paquetes necesarios
+paquetes <- c("ggplot2", "dplyr", "tidyr", "scales", "viridis", 
+              "patchwork", "RColorBrewer", "knitr", "kableExtra", "DT")
+
+for(pkg in paquetes) {
+  if(!require(pkg, character.only = TRUE, quietly = TRUE)) {
+    install.packages(pkg, repos = "http://cran.us.r-project.org", 
+                    dependencies = TRUE, quiet = TRUE)
+    library(pkg, character.only = TRUE)
+  }
+}
+```
+
+```{r parametros, include=FALSE}
+# Parámetros globales
+TOTAL_PERSONAS <- 15
+DIAS_MES <- 30
+NOMBRE_MES <- "Septiembre 2025"
+```
+
+```{r carga_datos, include=FALSE}
+# Cargar datos
+datos <- read.csv("datos_septiembre_2025_FINAL.csv")
+```
+
+```{r calculos_metricas, include=FALSE}
+# Calcular todas las métricas
+datos <- datos %>%
+  mutate(
+    # Carga de trabajo
+    Carga_Trabajo = Alertas_Dia / Dotacion,
+    
+    # Productividad
+    Productividad = Gestion_Dia / Dotacion,
+    
+    # Capacidad teórica
+    Capacidad_Teorica = (Dotacion * 60) / Tiempo_Prom,
+    
+    # Utilización
+    Utilizacion = (Gestion_Dia / Capacidad_Teorica) * 100,
+    
+    # Déficit
+    Deficit = Gestion_Dia - Capacidad_Teorica,
+    
+    # Periodo
+    Periodo = case_when(
+      Hora >= 0 & Hora < 6 ~ "Madrugada",
+      Hora >= 6 & Hora < 12 ~ "Mañana",
+      Hora >= 12 & Hora < 18 ~ "Tarde",
+      Hora >= 18 & Hora < 24 ~ "Noche"
+    ),
+    
+    # Estado operativo
+    Estado = case_when(
+      Utilizacion > 100 ~ "Sobrecarga Crítica",
+      Utilizacion > 80 ~ "Sobrecarga",
+      Utilizacion >= 60 ~ "Óptimo",
+      Utilizacion >= 40 ~ "Subutilización Leve",
+      TRUE ~ "Subutilización Severa"
+    ),
+    
+    Estado_Factor = factor(Estado, levels = c(
+      "Subutilización Severa", "Subutilización Leve", "Óptimo",
+      "Sobrecarga", "Sobrecarga Crítica"
+    ))
+  )
+
+# Métricas globales
+total_personas_hora <- sum(datos$Dotacion)
+total_alertas_dia <- sum(datos$Alertas_Dia)
+total_gestiones_dia <- sum(datos$Gestion_Dia)
+tiempo_prom_ponderado <- weighted.mean(datos$Tiempo_Prom, datos$Gestion_Dia)
+capacidad_por_persona_hora <- 60 / tiempo_prom_ponderado
+capacidad_teorica_total <- sum(datos$Capacidad_Teorica)
+brecha <- total_alertas_dia - capacidad_teorica_total
+utilizacion_sistema <- (total_gestiones_dia / capacidad_teorica_total) * 100
+```
+
+```{r optimizacion, include=FALSE}
+# Optimización: Distribución Equitativa
+datos <- datos %>%
+  mutate(
+    # Método 1: Por alertas
+    Peso_Alertas = Alertas_Dia / sum(Alertas_Dia),
+    Dot_Por_Alertas = pmax(1, round(Peso_Alertas * total_personas_hora)),
+    
+    # Método 2: Por tiempo
+    Peso_Tiempo = (Gestion_Dia * Tiempo_Prom) / sum(Gestion_Dia * Tiempo_Prom),
+    Dot_Por_Tiempo = pmax(1, round(Peso_Tiempo * total_personas_hora)),
+    
+    # Método 3: Por carga
+    Peso_Carga = Carga_Trabajo / sum(Carga_Trabajo),
+    Dot_Por_Carga = pmax(1, round(Peso_Carga * total_personas_hora)),
+    
+    # Dotación óptima (híbrida)
+    Dotacion_Optima_Raw = round((Dot_Por_Alertas + Dot_Por_Tiempo + Dot_Por_Carga) / 3),
+    Dotacion_Optima = pmax(1, Dotacion_Optima_Raw)
+  )
+
+# Ajuste fino
+diferencia <- total_personas_hora - sum(datos$Dotacion_Optima)
+if(diferencia != 0) {
+  if(diferencia > 0) {
+    indices <- order(datos$Carga_Trabajo, decreasing = TRUE)[1:abs(diferencia)]
+    datos$Dotacion_Optima[indices] <- datos$Dotacion_Optima[indices] + 1
+  } else {
+    indices <- order(datos$Carga_Trabajo)[1:abs(diferencia)]
+    datos$Dotacion_Optima[indices] <- pmax(datos$Dotacion_Optima[indices] - 1, 1)
+  }
+}
+
+# Recalcular con dotación óptima
+datos <- datos %>%
+  mutate(
+    Cambio = Dotacion_Optima - Dotacion,
+    Carga_Optima = Alertas_Dia / Dotacion_Optima,
+    Capacidad_Optima = (Dotacion_Optima * 60) / Tiempo_Prom,
+    Utilizacion_Optima = (Gestion_Dia / Capacidad_Optima) * 100,
+    Estado_Optimo = case_when(
+      Utilizacion_Optima > 100 ~ "Sobrecarga Crítica",
+      Utilizacion_Optima > 80 ~ "Sobrecarga",
+      Utilizacion_Optima >= 60 ~ "Óptimo",
+      Utilizacion_Optima >= 40 ~ "Subutilización Leve",
+      TRUE ~ "Subutilización Severa"
+    )
+  )
+
+# Métricas de mejora
+desv_actual <- sd(datos$Carga_Trabajo)
+desv_optima <- sd(datos$Carga_Optima)
+mejora_equidad <- ((desv_actual - desv_optima) / desv_actual) * 100
+criticas_actual <- sum(datos$Utilizacion > 100)
+criticas_optima <- sum(datos$Utilizacion_Optima > 100)
+```
+
+```{r estadisticas_periodo, include=FALSE}
+stats_periodo <- datos %>%
+  group_by(Periodo) %>%
+  summarise(
+    Horas = n(),
+    Dotacion_Prom = round(mean(Dotacion), 1),
+    Alertas_Total = round(sum(Alertas_Dia), 1),
+    Pct_Total = round(sum(Alertas_Dia)/total_alertas_dia*100, 1),
+    Carga_Prom = round(mean(Carga_Trabajo), 1),
+    Utilizacion_Prom = round(mean(Utilizacion), 0),
+    .groups = 'drop'
+  ) %>%
+  arrange(desc(Alertas_Total))
+```
+
+```{r tema_graficas, include=FALSE}
+# Tema personalizado para gráficas
+tema_corp <- theme_minimal(base_size = 11) +
+  theme(
+    plot.title = element_text(face = "bold", size = 14, hjust = 0.5),
+    plot.subtitle = element_text(size = 10, hjust = 0.5, color = "gray30"),
+    axis.title = element_text(face = "bold", size = 11),
+    legend.position = "bottom",
+    panel.grid.minor = element_blank()
+  )
+
+# Colores corporativos
+col_principal <- "#2C3E50"
+col_alerta <- "#E74C3C"
+col_exito <- "#27AE60"
+col_advertencia <- "#F39C12"
+col_info <- "#3498DB"
+```
+
+---
+
+# {.tabset .tabset-fade}
+
+## Resumen Ejecutivo
+
+<div style="background-color: #f8f9fa; padding: 20px; border-left: 5px solid #2C3E50; margin: 20px 0;">
+
+### 📊 Datos Analizados
+
+**Periodo:** `r NOMBRE_MES` (30 días)  
+**Personal:** `r TOTAL_PERSONAS` personas  
+**Volumen:** `r format(round(total_alertas_dia, 0), big.mark=",")` alertas/día (promedio)
+
+</div>
+
+### Hallazgos Principales
+
+```{r resumen_boxes, results='asis'}
+cat('<div style="display: flex; flex-wrap: wrap; gap: 15px; margin: 20px 0;">')
+
+# Box 1: Capacidad
+cat('<div style="flex: 1; min-width: 200px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">')
+cat('<h4 style="margin: 0 0 10px 0;">Capacidad Instalada</h4>')
+cat('<p style="font-size: 24px; font-weight: bold; margin: 5px 0;">',
+    format(round(capacidad_teorica_total, 0), big.mark=","), '</p>')
+cat('<p style="margin: 0; opacity: 0.9;">gestiones/día</p>')
+cat('</div>')
+
+# Box 2: Tasa de Atención
+tasa_atencion <- (total_gestiones_dia / total_alertas_dia) * 100
+cat('<div style="flex: 1; min-width: 200px; background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">')
+cat('<h4 style="margin: 0 0 10px 0;">Tasa de Atención</h4>')
+cat('<p style="font-size: 24px; font-weight: bold; margin: 5px 0;">',
+    round(tasa_atencion, 1), '%</p>')
+cat('<p style="margin: 0; opacity: 0.9;">de alertas atendidas</p>')
+cat('</div>')
+
+# Box 3: Mejora en Equidad
+cat('<div style="flex: 1; min-width: 200px; background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">')
+cat('<h4 style="margin: 0 0 10px 0;">Mejora en Equidad</h4>')
+cat('<p style="font-size: 24px; font-weight: bold; margin: 5px 0;">',
+    round(mejora_equidad, 1), '%</p>')
+cat('<p style="margin: 0; opacity: 0.9;">con redistribución</p>')
+cat('</div>')
+
+# Box 4: Productividad
+prod_persona <- total_gestiones_dia / TOTAL_PERSONAS
+cat('<div style="flex: 1; min-width: 200px; background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); color: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">')
+cat('<h4 style="margin: 0 0 10px 0;">Productividad</h4>')
+cat('<p style="font-size: 24px; font-weight: bold; margin: 5px 0;">',
+    round(prod_persona, 1), '</p>')
+cat('<p style="margin: 0; opacity: 0.9;">gestiones/persona/día</p>')
+cat('</div>')
+
+cat('</div>')
+```
+
+### Conclusiones Clave
+
+<div style="background-color: #d4edda; border: 1px solid #c3e6cb; border-radius: 5px; padding: 15px; margin: 15px 0;">
+<h4 style="color: #155724; margin-top: 0;">✅ Buenas Noticias</h4>
+
+1. **Capacidad suficiente:** El equipo de `r TOTAL_PERSONAS` personas **SÍ es suficiente** para el volumen total
+2. **Alta eficiencia:** Se atiende el **`r round(tasa_atencion, 1)`%** de las alertas
+3. **Volumen manejable:** ~`r round(total_alertas_dia, 0)` alertas/día es un volumen razonable
+4. **Productividad adecuada:** ~`r round(prod_persona, 1)` gestiones por persona al día
+
+</div>
+
+<div style="background-color: #fff3cd; border: 1px solid #ffeeba; border-radius: 5px; padding: 15px; margin: 15px 0;">
+<h4 style="color: #856404; margin-top: 0;">⚠️ Áreas de Mejora</h4>
+
+1. **Distribución desigual:** Gran variación en carga de trabajo entre horas
+2. **Horas críticas:** `r criticas_actual` horas con sobrecarga (>100% utilización)
+3. **Desbalance:** Algunas horas con 1 persona, otras con 12 personas
+4. **Oportunidad:** Redistribuir personal puede mejorar equidad en **`r round(mejora_equidad, 1)`%**
+
+</div>
+
+---
+
+## Capacidad Instalada
+
+### Análisis de Capacidad del Sistema
+
+```{r tabla_capacidad}
+tabla_cap <- data.frame(
+  Métrica = c(
+    "Personal Total",
+    "Personas-Hora/Día",
+    "Alertas Recibidas/Día",
+    "Gestiones Realizadas/Día",
+    "Tasa de Atención",
+    "Tiempo Promedio Gestión",
+    "Capacidad Teórica Total",
+    "Brecha de Capacidad",
+    "Utilización del Sistema"
+  ),
+  Valor = c(
+    paste(TOTAL_PERSONAS, "personas"),
+    paste(total_personas_hora, "hrs"),
+    paste0(format(round(total_alertas_dia, 1), big.mark=","), " alertas"),
+    paste0(format(round(total_gestiones_dia, 1), big.mark=","), " gestiones"),
+    paste0(round(tasa_atencion, 1), "%"),
+    paste0(round(tiempo_prom_ponderado, 1), " minutos"),
+    paste0(format(round(capacidad_teorica_total, 1), big.mark=","), " gestiones"),
+    paste0(format(round(brecha, 1), big.mark=","), 
+           ifelse(brecha > 0, " (DÉFICIT)", " (SUPERÁVIT)")),
+    paste0(round(utilizacion_sistema, 1), "%")
+  )
+)
+
+kable(tabla_cap, 
+      col.names = c("Métrica", "Valor"),
+      align = c("l", "r")) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE,
+                position = "center") %>%
+  row_spec(0, bold = TRUE, background = "#2C3E50", color = "white") %>%
+  row_spec(c(7,8,9), background = "#f8f9fa", bold = TRUE)
+```
+
+### Interpretación
+
+```{r interpretacion_capacidad, results='asis'}
+if(brecha > 0) {
+  cat('<div style="background-color: #f8d7da; border: 1px solid #f5c6cb; border-radius: 5px; padding: 15px; margin: 15px 0;">')
+  cat('<h4 style="color: #721c24;">🔴 Déficit de Capacidad Detectado</h4>')
+  cat('<p>El sistema presenta un déficit de <strong>', 
+      format(round(brecha, 1), big.mark=","), 
+      ' alertas/día</strong>. Se recomienda:</p>')
+  cat('<ul>')
+  cat('<li>Redistribuir personal según demanda por hora</li>')
+  personas_add <- ceiling(brecha / (total_gestiones_dia/TOTAL_PERSONAS))
+  cat('<li>Evaluar contratación de aproximadamente <strong>', personas_add, ' personas adicionales</strong></li>')
+  cat('<li>Optimizar procesos para reducir tiempo promedio de gestión</li>')
+  cat('</ul>')
+  cat('</div>')
+} else {
+  cat('<div style="background-color: #d4edda; border: 1px solid #c3e6cb; border-radius: 5px; padding: 15px; margin: 15px 0;">')
+  cat('<h4 style="color: #155724;">✅ Capacidad Suficiente</h4>')
+  cat('<p>El sistema tiene capacidad suficiente. El foco debe estar en <strong>optimizar la distribución de personal</strong> por hora para mejorar la eficiencia y balance de carga.</p>')
+  cat('</div>')
+}
+```
+
+---
+
+## Visualizaciones
+
+### Gráfica 1: Panorama General
+
+```{r grafica_panorama, fig.width=12, fig.height=7}
+ggplot(datos, aes(x = Hora)) +
+  geom_col(aes(y = Alertas_Dia, fill = "Alertas/día"), alpha = 0.6, width = 0.8) +
+  geom_line(aes(y = Dotacion * 4, color = "Dotación Actual"), size = 1.5) +
+  geom_line(aes(y = Dotacion_Optima * 4, color = "Dotación Óptima"), 
+            size = 1.5, linetype = "dashed") +
+  scale_y_continuous(
+    name = "Alertas por Día",
+    sec.axis = sec_axis(~./4, name = "Dotación (Personas)")
+  ) +
+  scale_x_continuous(breaks = seq(0, 23, 2)) +
+  scale_fill_manual(values = c("Alertas/día" = col_alerta)) +
+  scale_color_manual(values = c(
+    "Dotación Actual" = col_info,
+    "Dotación Óptima" = col_exito
+  )) +
+  labs(
+    title = "Panorama General: Alertas y Distribución de Personal",
+    subtitle = paste0("Promedio diario ", NOMBRE_MES, " | ", 
+                     round(total_alertas_dia, 0), " alertas/día | ",
+                     TOTAL_PERSONAS, " personas"),
+    x = "Hora del Día",
+    fill = NULL,
+    color = NULL
+  ) +
+  tema_corp
+```
+
+<div style="background-color: #e7f3ff; padding: 10px; border-left: 4px solid #2196F3; margin: 10px 0;">
+**Interpretación:** La línea de alertas muestra la demanda por hora. Las líneas de dotación muestran cómo está distribuido el personal actualmente vs. la distribución óptima propuesta.
+</div>
+
+### Gráfica 2: Comparación de Dotación
+
+```{r grafica_comparacion, fig.width=12, fig.height=7}
+datos_comp <- datos %>%
+  select(Hora, Actual = Dotacion, Óptima = Dotacion_Optima) %>%
+  pivot_longer(cols = c(Actual, Óptima), names_to = "Tipo", values_to = "Personas")
+
+ggplot(datos_comp, aes(x = factor(Hora), y = Personas, fill = Tipo)) +
+  geom_col(position = "dodge", width = 0.7, alpha = 0.85) +
+  geom_text(data = datos %>% filter(abs(Cambio) >= 2),
+            aes(x = factor(Hora), y = pmax(Dotacion, Dotacion_Optima) + 0.6,
+                label = paste0(ifelse(Cambio > 0, "+", ""), Cambio)),
+            inherit.aes = FALSE, size = 3, fontface = "bold", color = col_alerta) +
+  scale_fill_manual(values = c("Actual" = "#95A5A6", "Óptima" = col_exito)) +
+  labs(
+    title = "Distribución Equitativa: Actual vs Óptima",
+    subtitle = paste0("Mejora en equidad: ", round(mejora_equidad, 1), 
+                     "% | Números rojos = cambios ≥2 personas"),
+    x = "Hora del Día",
+    y = "Número de Personas",
+    fill = NULL
+  ) +
+  tema_corp +
+  theme(axis.text.x = element_text(angle = 0))
+```
+
+<div style="background-color: #e7f3ff; padding: 10px; border-left: 4px solid #2196F3; margin: 10px 0;">
+**Interpretación:** La distribución óptima (verde) redistribuye el personal proporcionalmente a la demanda de cada hora, reduciendo la inequidad en la carga de trabajo.
+</div>
+
+### Gráfica 3: Carga de Trabajo por Persona
+
+```{r grafica_carga, fig.width=12, fig.height=7}
+datos_carga <- datos %>%
+  select(Hora, Actual = Carga_Trabajo, Óptima = Carga_Optima) %>%
+  pivot_longer(cols = c(Actual, Óptima), names_to = "Escenario", values_to = "Carga")
+
+ggplot(datos_carga, aes(x = Hora, y = Carga, color = Escenario)) +
+  geom_line(size = 1.5, alpha = 0.8) +
+  geom_point(size = 3) +
+  geom_hline(yintercept = mean(datos$Carga_Optima), 
+             linetype = "dashed", color = "gray50", size = 0.8) +
+  annotate("text", x = 21, y = mean(datos$Carga_Optima) + 3,
+           label = paste0("Promedio óptimo: ", round(mean(datos$Carga_Optima), 1)),
+           color = "gray30", size = 3.5) +
+  scale_color_manual(values = c("Actual" = col_alerta, "Óptima" = col_exito)) +
+  scale_x_continuous(breaks = seq(0, 23, 2)) +
+  labs(
+    title = "Carga de Trabajo por Persona",
+    subtitle = "Alertas asignadas por persona según hora del día",
+    x = "Hora del Día",
+    y = "Alertas/Persona/Día",
+    color = NULL
+  ) +
+  tema_corp
+```
+
+<div style="background-color: #e7f3ff; padding: 10px; border-left: 4px solid #2196F3; margin: 10px 0;">
+**Interpretación:** La línea verde muestra cómo la carga se equilibra con la redistribución, reduciendo picos y valles extremos.
+</div>
+
+### Gráfica 4: Utilización de Capacidad
+
+```{r grafica_utilizacion, fig.width=12, fig.height=7}
+ggplot(datos, aes(x = factor(Hora))) +
+  geom_col(aes(y = Utilizacion, fill = "Actual"), 
+           alpha = 0.6, width = 0.4, position = position_nudge(x = -0.2)) +
+  geom_col(aes(y = Utilizacion_Optima, fill = "Óptima"),
+           alpha = 0.6, width = 0.4, position = position_nudge(x = 0.2)) +
+  geom_hline(yintercept = 100, color = col_alerta, size = 1, linetype = "solid") +
+  geom_hline(yintercept = 80, color = col_advertencia, size = 0.8, linetype = "dashed") +
+  annotate("rect", xmin = 0, xmax = 25, ymin = 60, ymax = 80, 
+           alpha = 0.1, fill = col_exito) +
+  annotate("text", x = 2, y = 105, label = "100% = Capacidad máxima", 
+           color = col_alerta, size = 3, fontface = "bold") +
+  scale_fill_manual(values = c("Actual" = col_info, "Óptima" = col_exito)) +
+  scale_y_continuous(labels = function(x) paste0(x, "%"),
+                    limits = c(0, min(max(datos$Utilizacion, datos$Utilizacion_Optima) * 1.1, 300))) +
+  labs(
+    title = "Utilización de Capacidad",
+    subtitle = "Zona verde: óptimo (60-80%) | Zona naranja: sobrecarga (>80%) | Línea roja: crítico (>100%)",
+    x = "Hora del Día",
+    y = "Utilización de Capacidad (%)",
+    fill = NULL
+  ) +
+  tema_corp +
+  theme(axis.text.x = element_text(angle = 0))
+```
+
+<div style="background-color: #e7f3ff; padding: 10px; border-left: 4px solid #2196F3; margin: 10px 0;">
+**Interpretación:** El rango óptimo de utilización está entre 60-80% (zona verde). Valores por encima de 100% indican sobrecarga crítica.
+</div>
+
+---
+
+## Distribución Equitativa
+
+### Concepto de Equidad
+
+<div style="background-color: #e3f2fd; padding: 20px; border-radius: 5px; margin: 20px 0;">
+
+**Distribución Equitativa ≠ Distribución Igual**
+
+- **Distribución Igual:** Todos reciben lo mismo (ej: 5 personas por hora)
+- **Distribución Equitativa:** Cada uno recibe según su necesidad (proporcional a demanda)
+
+La distribución equitativa optimiza recursos y equilibra la carga de trabajo.
+
+</div>
+
+### Tabla de Cambios Propuestos
+
+```{r tabla_cambios}
+plan_cambios <- datos %>%
+  filter(Cambio != 0) %>%
+  mutate(
+    Prioridad = case_when(
+      abs(Cambio) >= 3 ~ "🔴 Alta",
+      abs(Cambio) >= 2 ~ "🟡 Media",
+      TRUE ~ "🟢 Baja"
+    ),
+    Accion = ifelse(Cambio > 0, "AUMENTAR", "REDUCIR"),
+    Hora_Label = sprintf("%02d:00", Hora)
+  ) %>%
+  select(
+    Prioridad, Hora_Label, Periodo, Accion,
+    `De` = Dotacion, `A` = Dotacion_Optima, Cambio,
+    `Alertas/Día` = Alertas_Dia, 
+    `Carga Actual` = Carga_Trabajo, 
+    `Carga Óptima` = Carga_Optima
+  ) %>%
+  arrange(desc(abs(Cambio))) %>%
+  mutate(across(where(is.numeric), ~round(., 1)))
+
+datatable(plan_cambios,
+          rownames = FALSE,
+          options = list(
+            pageLength = 10,
+            dom = 'Bfrtip',
+            buttons = c('copy', 'csv', 'excel')
+          ),
+          caption = "Plan de Redistribución Priorizado") %>%
+  formatStyle('Prioridad',
+              target = 'row',
+              backgroundColor = styleEqual(
+                c("🔴 Alta", "🟡 Media", "🟢 Baja"),
+                c('#ffebee', '#fff8e1', '#e8f5e9')
+              ))
+```
+
+### Métricas de Mejora
+
+```{r metricas_mejora}
+metricas_comp <- data.frame(
+  Métrica = c(
+    "Desviación Estándar Carga",
+    "Carga Máxima",
+    "Carga Mínima",
+    "Horas en Sobrecarga (>80%)",
+    "Horas Críticas (>100%)",
+    "Utilización Promedio"
+  ),
+  Actual = c(
+    round(desv_actual, 1),
+    round(max(datos$Carga_Trabajo), 1),
+    round(min(datos$Carga_Trabajo), 1),
+    sum(datos$Utilizacion > 80),
+    criticas_actual,
+    round(mean(datos$Utilizacion), 1)
+  ),
+  Óptima = c(
+    round(desv_optima, 1),
+    round(max(datos$Carga_Optima), 1),
+    round(min(datos$Carga_Optima), 1),
+    sum(datos$Utilizacion_Optima > 80),
+    criticas_optima,
+    round(mean(datos$Utilizacion_Optima), 1)
+  )
+) %>%
+  mutate(
+    Mejora = Óptima - Actual,
+    `Mejora %` = round((Mejora / Actual) * 100, 1)
+  )
+
+kable(metricas_comp,
+      align = c("l", "r", "r", "r", "r")) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"),
+                full_width = FALSE) %>%
+  row_spec(0, bold = TRUE, background = "#2C3E50", color = "white") %>%
+  column_spec(4, bold = TRUE, color = "white",
+              background = ifelse(metricas_comp$Mejora < 0, "#27AE60", "#E74C3C"))
+```
+
+---
+
+## Análisis por Periodo
+
+### Estadísticas por Periodo del Día
+
+```{r tabla_periodo}
+kable(stats_periodo,
+      col.names = c("Periodo", "Horas", "Dotación Prom.", "Alertas Total",
+                   "% Total", "Carga Prom.", "Utilización Prom."),
+      align = c("l", rep("r", 6))) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"),
+                full_width = FALSE) %>%
+  row_spec(0, bold = TRUE, background = "#2C3E50", color = "white") %>%
+  row_spec(which(stats_periodo$Utilizacion_Prom > 80),
+           background = "#ffebee")
+```
+
+### Gráfica: Distribución por Periodo
+
+```{r grafica_periodo, fig.width=10, fig.height=6}
+ggplot(stats_periodo, aes(x = reorder(Periodo, -Alertas_Total))) +
+  geom_col(aes(y = Alertas_Total, fill = Periodo), 
+           alpha = 0.8, show.legend = FALSE, width = 0.7) +
+  geom_text(aes(y = Alertas_Total, 
+                label = paste0(round(Alertas_Total, 0), " alertas\n",
+                              Pct_Total, "% del total")),
+            vjust = -0.3, size = 4, fontface = "bold") +
+  scale_fill_brewer(palette = "Set2") +
+  scale_y_continuous(limits = c(0, max(stats_periodo$Alertas_Total) * 1.2)) +
+  labs(
+    title = "Distribución de Alertas por Periodo del Día",
+    subtitle = "Volumen promedio diario por periodo",
+    x = NULL,
+    y = "Alertas/Día"
+  ) +
+  tema_corp
+```
+
+---
+
+## Horas Críticas
+
+### Top 10 Horas con Mayor Carga
+
+```{r tabla_criticas}
+top_criticas <- datos %>%
+  arrange(desc(Carga_Trabajo)) %>%
+  head(10) %>%
+  mutate(Hora_Label = sprintf("%02d:00", Hora)) %>%
+  select(
+    `#` = Hora_Label,
+    Periodo,
+    Dotación = Dotacion,
+    `Alertas/Día` = Alertas_Dia,
+    `Carga` = Carga_Trabajo,
+    `Utilización %` = Utilizacion
+  ) %>%
+  mutate(across(where(is.numeric), ~round(., 1)))
+
+kable(top_criticas) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"),
+                full_width = FALSE) %>%
+  row_spec(0, bold = TRUE, background = "#E74C3C", color = "white") %>%
+  row_spec(1:3, background = "#ffebee", bold = TRUE)
+```
+
+### Gráfica: Top 10 Horas Críticas
+
+```{r grafica_criticas, fig.width=10, fig.height=8}
+top10_plot <- datos %>%
+  arrange(desc(Carga_Trabajo)) %>%
+  head(10) %>%
+  mutate(Hora_Label = sprintf("%02d:00", Hora))
+
+ggplot(top10_plot, aes(x = reorder(Hora_Label, Carga_Trabajo), y = Carga_Trabajo)) +
+  geom_col(aes(fill = Utilizacion), width = 0.7) +
+  geom_text(aes(label = round(Carga_Trabajo, 1)), 
+            hjust = -0.1, size = 3.5, fontface = "bold") +
+  scale_fill_gradient(low = col_advertencia, high = col_alerta,
+                     labels = function(x) paste0(x, "%")) +
+  coord_flip() +
+  labs(
+    title = "Top 10 Horas Más Críticas",
+    subtitle = "Mayor carga de trabajo por persona | Color = nivel de utilización",
+    x = NULL,
+    y = "Alertas/Persona/Día",
+    fill = "Utilización"
+  ) +
+  tema_corp +
+  theme(legend.position = "right")
+```
+
+---
+
+## Recomendaciones
+
+### Acciones Prioritarias
+
+<div style="background-color: #fff; padding: 20px; border: 2px solid #2C3E50; border-radius: 10px; margin: 20px 0;">
+
+#### 🎯 Corto Plazo (1-2 semanas)
+
+```{r recomendaciones_corto, results='asis'}
+aumentos_prioritarios <- datos %>%
+  filter(Cambio >= 3) %>%
+  arrange(desc(Cambio))
+
+if(nrow(aumentos_prioritarios) > 0) {
+  cat('<div style="background-color: #ffebee; padding: 15px; border-radius: 5px; margin: 10px 0;">')
+  cat('<h5 style="color: #c62828; margin-top: 0;">🔴 AUMENTAR DOTACIÓN (Prioridad Alta):</h5>')
+  cat('<ul>')
+  for(i in 1:min(5, nrow(aumentos_prioritarios))) {
+    row <- aumentos_prioritarios[i,]
+    cat('<li><strong>Hora ', sprintf("%02d", row$Hora), ':00</strong> - ',
+        'Aumentar de ', row$Dotacion, ' a ', row$Dotacion_Optima, ' personas ',
+        '(+', row$Cambio, ') | ',
+        round(row$Alertas_Dia, 0), ' alertas/día</li>')
+  }
+  cat('</ul>')
+  cat('</div>')
+}
+
+reducciones <- datos %>%
+  filter(Cambio <= -2) %>%
+  arrange(Cambio)
+
+if(nrow(reducciones) > 0) {
+  cat('<div style="background-color: #fff8e1; padding: 15px; border-radius: 5px; margin: 10px 0;">')
+  cat('<h5 style="color: #f57c00; margin-top: 0;">🟡 REDUCIR DOTACIÓN (Liberar recursos):</h5>')
+  cat('<ul>')
+  for(i in 1:min(5, nrow(reducciones))) {
+    row <- reducciones[i,]
+    cat('<li><strong>Hora ', sprintf("%02d", row$Hora), ':00</strong> - ',
+        'Reducir de ', row$Dotacion, ' a ', row$Dotacion_Optima, ' personas ',
+        '(', row$Cambio, ') | ',
+        round(row$Alertas_Dia, 0), ' alertas/día</li>')
+  }
+  cat('</ul>')
+  cat('</div>')
+}
+```
+
+#### 📊 Mediano Plazo (1-2 meses)
+
+1. **Implementar fase piloto** de redistribución
+2. **Monitorear KPIs** diariamente:
+   - Tiempo de primera respuesta
+   - Tiempo de resolución
+   - Satisfacción del equipo
+   - Calidad de gestiones
+3. **Ajustar** dotación según resultados reales
+4. **Capacitar** al personal en gestión eficiente
+
+#### 🚀 Largo Plazo (3-6 meses)
+
+1. **Automatizar** alertas de baja prioridad
+2. **Implementar** sistema de triaje automático
+3. **Reducir** tiempo promedio de gestión a <15 minutos
+4. **Establecer** SLA por tipo de alerta
+
+</div>
+
+### Beneficios Esperados
+
+```{r beneficios, results='asis'}
+cat('<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; margin: 20px 0;">')
+
+beneficios <- list(
+  list(icon = "📊", titulo = "Mejora en Equidad", 
+       valor = paste0(round(mejora_equidad, 1), "%"), 
+       desc = "Reducción en desviación de carga"),
+  list(icon = "⚡", titulo = "Horas Críticas", 
+       valor = paste0(criticas_actual - criticas_optima), 
+       desc = "Reducción de horas en sobrecarga"),
+  list(icon = "😊", titulo = "Satisfacción", 
+       valor = "↑", 
+       desc = "Mejor balance trabajo-vida"),
+  list(icon = "💰", titulo = "Eficiencia", 
+       valor = "↑", 
+       desc = "Mejor uso de recursos")
+)
+
+for(b in beneficios) {
+  cat('<div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 10px; text-align: center;">')
+  cat('<div style="font-size: 40px;">', b$icon, '</div>')
+  cat('<h4 style="margin: 10px 0;">', b$titulo, '</h4>')
+  cat('<div style="font-size: 28px; font-weight: bold; margin: 10px 0;">', b$valor, '</div>')
+  cat('<p style="margin: 0; opacity: 0.9; font-size: 14px;">', b$desc, '</p>')
+  cat('</div>')
+}
+
+cat('</div>')
+```
+
+---
+
+## Datos Detallados
+
+### Tabla Completa de Análisis
+
+```{r tabla_completa}
+tabla_detallada <- datos %>%
+  select(
+    Hora,
+    Periodo,
+    `Dot. Actual` = Dotacion,
+    `Dot. Óptima` = Dotacion_Optima,
+    Cambio,
+    `Alertas/Día` = Alertas_Dia,
+    `Gestión/Día` = Gestion_Dia,
+    `Tiempo Prom.` = Tiempo_Prom,
+    `Carga Actual` = Carga_Trabajo,
+    `Carga Óptima` = Carga_Optima,
+    `Util. Actual` = Utilizacion,
+    `Util. Óptima` = Utilizacion_Optima,
+    Estado
+  ) %>%
+  mutate(across(where(is.numeric), ~round(., 1)))
+
+datatable(tabla_detallada,
+          rownames = FALSE,
+          filter = 'top',
+          options = list(
+            pageLength = 24,
+            scrollX = TRUE,
+            dom = 'Bfrtip',
+            buttons = c('copy', 'csv', 'excel', 'print')
+          ),
+          caption = "Datos Completos del Análisis por Hora") %>%
+  formatStyle(
+    'Estado',
+    backgroundColor = styleEqual(
+      c("Subutilización Severa", "Subutilización Leve", "Óptimo", 
+        "Sobrecarga", "Sobrecarga Crítica"),
+      c('#e3f2fd', '#e8f5e9', '#c8e6c9', '#fff8e1', '#ffebee')
+    )
+  ) %>%
+  formatStyle(
+    'Cambio',
+    color = styleInterval(c(-0.1, 0.1), c('blue', 'black', 'red')),
+    fontWeight = 'bold'
+  )
+```
+
+---
+
+## Conclusiones
+
+### Resumen Final
+
+<div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 15px; margin: 30px 0;">
+
+<h3 style="margin-top: 0; text-align: center;">📊 Conclusiones del Análisis</h3>
+
+<div style="background: rgba(255,255,255,0.1); padding: 20px; border-radius: 10px; margin: 20px 0;">
+
+#### ✅ Hallazgos Principales
+
+1. **Capacidad Suficiente:** El equipo de `r TOTAL_PERSONAS` personas **es suficiente** para manejar el volumen de ~`r round(total_alertas_dia, 0)` alertas/día
+
+2. **Alta Eficiencia:** Se logra una tasa de atención del **`r round(tasa_atencion, 1)`%**
+
+3. **Oportunidad de Mejora:** La redistribución equitativa puede mejorar el balance de carga en **`r round(mejora_equidad, 1)`%**
+
+4. **Sin Contrataciones:** No se requiere aumentar el equipo, solo **redistribuir mejor**
+
+</div>
+
+<div style="background: rgba(255,255,255,0.1); padding: 20px; border-radius: 10px; margin: 20px 0;">
+
+#### 🎯 Acción Inmediata Recomendada
+
+**Implementar distribución equitativa propuesta:**
+
+- Redistribuir personal según demanda horaria
+- Priorizar horas críticas identificadas
+- Monitorear impacto durante 2-4 semanas
+- Ajustar según resultados
+
+</div>
+
+<div style="text-align: center; margin-top: 30px; font-size: 18px;">
+<strong>El problema NO es de cantidad, es de DISTRIBUCIÓN</strong>
+</div>
+
+</div>
+
+### Próximos Pasos
+
+```{r proximos_pasos, results='asis'}
+pasos <- data.frame(
+  Fase = c("Semana 1", "Semana 2-4", "Mes 2", "Mes 3+"),
+  Accion = c(
+    "Presentar informe al gerente y obtener aprobación",
+    "Implementar redistribución en fase piloto",
+    "Monitorear KPIs y ajustar según necesidad",
+    "Optimizar procesos y automatizar donde sea posible"
+  ),
+  Responsable = c(
+    "Equipo de Análisis",
+    "Gerencia + Supervisores",
+    "Equipo de Operaciones",
+    "Equipo de Tecnología"
+  )
+)
+
+kable(pasos) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"),
+                full_width = TRUE) %>%
+  row_spec(0, bold = TRUE, background = "#2C3E50", color = "white") %>%
+  column_spec(1, bold = TRUE, width = "15%") %>%
+  column_spec(2, width = "55%") %>%
+  column_spec(3, width = "30%")
+```
+
+---
+
+<div style="background-color: #f8f9fa; padding: 20px; border-top: 3px solid #2C3E50; margin-top: 40px;">
+
+### 📞 Información de Contacto
+
+Para dudas o mayor información sobre este análisis:
+
+- **Fecha de generación:** `r format(Sys.Date(), '%d de %B de %Y')`
+- **Periodo analizado:** `r NOMBRE_MES`
+- **Herramienta:** R Markdown
+
+---
+
+<p style="text-align: center; color: #6c757d; font-size: 12px; margin-top: 20px;">
+Informe generado automáticamente mediante análisis estadístico avanzado<br>
+© 2025 - Análisis de Dotación y Capacidad Instalada
+</p>
+
+</div>
+
+---
+
+## Anexo: Código R
+
+```{r codigo, echo=TRUE, eval=FALSE}
+# Este informe fue generado utilizando el siguiente código:
+
+# 1. Cargar datos
+datos <- read.csv("datos_septiembre_2025_FINAL.csv")
+
+# 2. Calcular métricas
+datos <- datos %>%
+  mutate(
+    Carga_Trabajo = Alertas_Dia / Dotacion,
+    Capacidad_Teorica = (Dotacion * 60) / Tiempo_Prom,
+    Utilizacion = (Gestion_Dia / Capacidad_Teorica) * 100
+  )
+
+# 3. Optimizar distribución
+datos <- datos %>%
+  mutate(
+    Peso = Alertas_Dia / sum(Alertas_Dia),
+    Dotacion_Optima = pmax(1, round(Peso * sum(Dotacion)))
+  )
+
+# 4. Generar visualizaciones con ggplot2
+# 5. Exportar resultados
+```
+
+<div style="background-color: #e7f3ff; padding: 15px; border-left: 4px solid #2196F3; margin: 15px 0;">
+**Nota:** Para reproducir este análisis, ejecuta el archivo `.Rmd` con los datos actualizados.
+</div>
