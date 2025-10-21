@@ -1,0 +1,813 @@
+---
+title: "Análisis de Capacidad Instalada y Distribución Equitativa de Personal"
+subtitle: "Sistema de Gestión de Alertas de Fraude - Septiembre 2025"
+author: "Análisis Estadístico Avanzado"
+date: "`r format(Sys.Date(), '%d de %B de %Y')`"
+output:
+  word_document:
+    toc: true
+    toc_depth: 3
+    reference_docx: word_template.docx
+    fig_width: 7
+    fig_height: 5
+    fig_caption: true
+    df_print: kable
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.align = 'center',
+  dpi = 300
+)
+```
+
+```{r librerias, include=FALSE}
+# Instalar y cargar paquetes necesarios
+paquetes <- c("ggplot2", "dplyr", "tidyr", "scales", "viridis", 
+              "patchwork", "RColorBrewer", "knitr", "flextable", "officer")
+
+for(pkg in paquetes) {
+  if(!require(pkg, character.only = TRUE, quietly = TRUE)) {
+    install.packages(pkg, repos = "http://cran.us.r-project.org", 
+                    dependencies = TRUE, quiet = TRUE)
+    library(pkg, character.only = TRUE)
+  }
+}
+```
+
+```{r parametros, include=FALSE}
+# Parámetros globales
+TOTAL_PERSONAS <- 15
+DIAS_MES <- 30
+NOMBRE_MES <- "Septiembre 2025"
+```
+
+```{r carga_datos, include=FALSE}
+# Cargar datos
+datos <- read.csv("datos_septiembre_2025_FINAL.csv")
+```
+
+```{r calculos_metricas, include=FALSE}
+# Calcular todas las métricas
+datos <- datos %>%
+  mutate(
+    # Carga de trabajo
+    Carga_Trabajo = Alertas_Dia / Dotacion,
+    
+    # Productividad
+    Productividad = Gestion_Dia / Dotacion,
+    
+    # Capacidad teórica
+    Capacidad_Teorica = (Dotacion * 60) / Tiempo_Prom,
+    
+    # Utilización
+    Utilizacion = (Gestion_Dia / Capacidad_Teorica) * 100,
+    
+    # Déficit
+    Deficit = Gestion_Dia - Capacidad_Teorica,
+    
+    # Periodo
+    Periodo = case_when(
+      Hora >= 0 & Hora < 6 ~ "Madrugada",
+      Hora >= 6 & Hora < 12 ~ "Mañana",
+      Hora >= 12 & Hora < 18 ~ "Tarde",
+      Hora >= 18 & Hora < 24 ~ "Noche"
+    ),
+    
+    # Estado operativo
+    Estado = case_when(
+      Utilizacion > 100 ~ "Sobrecarga Crítica",
+      Utilizacion > 80 ~ "Sobrecarga",
+      Utilizacion >= 60 ~ "Óptimo",
+      Utilizacion >= 40 ~ "Subutilización Leve",
+      TRUE ~ "Subutilización Severa"
+    ),
+    
+    Estado_Factor = factor(Estado, levels = c(
+      "Subutilización Severa", "Subutilización Leve", "Óptimo",
+      "Sobrecarga", "Sobrecarga Crítica"
+    ))
+  )
+
+# Métricas globales
+total_personas_hora <- sum(datos$Dotacion)
+total_alertas_dia <- sum(datos$Alertas_Dia)
+total_gestiones_dia <- sum(datos$Gestion_Dia)
+tiempo_prom_ponderado <- weighted.mean(datos$Tiempo_Prom, datos$Gestion_Dia)
+capacidad_por_persona_hora <- 60 / tiempo_prom_ponderado
+capacidad_teorica_total <- sum(datos$Capacidad_Teorica)
+brecha <- total_alertas_dia - capacidad_teorica_total
+utilizacion_sistema <- (total_gestiones_dia / capacidad_teorica_total) * 100
+```
+
+```{r optimizacion, include=FALSE}
+# Optimización: Distribución Equitativa
+datos <- datos %>%
+  mutate(
+    # Método 1: Por alertas
+    Peso_Alertas = Alertas_Dia / sum(Alertas_Dia),
+    Dot_Por_Alertas = pmax(1, round(Peso_Alertas * total_personas_hora)),
+    
+    # Método 2: Por tiempo
+    Peso_Tiempo = (Gestion_Dia * Tiempo_Prom) / sum(Gestion_Dia * Tiempo_Prom),
+    Dot_Por_Tiempo = pmax(1, round(Peso_Tiempo * total_personas_hora)),
+    
+    # Método 3: Por carga
+    Peso_Carga = Carga_Trabajo / sum(Carga_Trabajo),
+    Dot_Por_Carga = pmax(1, round(Peso_Carga * total_personas_hora)),
+    
+    # Dotación óptima (híbrida)
+    Dotacion_Optima_Raw = round((Dot_Por_Alertas + Dot_Por_Tiempo + Dot_Por_Carga) / 3),
+    Dotacion_Optima = pmax(1, Dotacion_Optima_Raw)
+  )
+
+# Ajuste fino
+diferencia <- total_personas_hora - sum(datos$Dotacion_Optima)
+if(diferencia != 0) {
+  if(diferencia > 0) {
+    indices <- order(datos$Carga_Trabajo, decreasing = TRUE)[1:abs(diferencia)]
+    datos$Dotacion_Optima[indices] <- datos$Dotacion_Optima[indices] + 1
+  } else {
+    indices <- order(datos$Carga_Trabajo)[1:abs(diferencia)]
+    datos$Dotacion_Optima[indices] <- pmax(datos$Dotacion_Optima[indices] - 1, 1)
+  }
+}
+
+# Recalcular con dotación óptima
+datos <- datos %>%
+  mutate(
+    Cambio = Dotacion_Optima - Dotacion,
+    Carga_Optima = Alertas_Dia / Dotacion_Optima,
+    Capacidad_Optima = (Dotacion_Optima * 60) / Tiempo_Prom,
+    Utilizacion_Optima = (Gestion_Dia / Capacidad_Optima) * 100,
+    Estado_Optimo = case_when(
+      Utilizacion_Optima > 100 ~ "Sobrecarga Crítica",
+      Utilizacion_Optima > 80 ~ "Sobrecarga",
+      Utilizacion_Optima >= 60 ~ "Óptimo",
+      Utilizacion_Optima >= 40 ~ "Subutilización Leve",
+      TRUE ~ "Subutilización Severa"
+    )
+  )
+
+# Métricas de mejora
+desv_actual <- sd(datos$Carga_Trabajo)
+desv_optima <- sd(datos$Carga_Optima)
+mejora_equidad <- ((desv_actual - desv_optima) / desv_actual) * 100
+criticas_actual <- sum(datos$Utilizacion > 100)
+criticas_optima <- sum(datos$Utilizacion_Optima > 100)
+```
+
+```{r estadisticas_periodo, include=FALSE}
+stats_periodo <- datos %>%
+  group_by(Periodo) %>%
+  summarise(
+    Horas = n(),
+    Dotacion_Prom = round(mean(Dotacion), 1),
+    Alertas_Total = round(sum(Alertas_Dia), 1),
+    Pct_Total = round(sum(Alertas_Dia)/total_alertas_dia*100, 1),
+    Carga_Prom = round(mean(Carga_Trabajo), 1),
+    Utilizacion_Prom = round(mean(Utilizacion), 0),
+    .groups = 'drop'
+  ) %>%
+  arrange(desc(Alertas_Total))
+```
+
+```{r tema_graficas, include=FALSE}
+# Tema personalizado para gráficas
+tema_corp <- theme_minimal(base_size = 11) +
+  theme(
+    plot.title = element_text(face = "bold", size = 14, hjust = 0.5),
+    plot.subtitle = element_text(size = 10, hjust = 0.5, color = "gray30"),
+    axis.title = element_text(face = "bold", size = 11),
+    legend.position = "bottom",
+    panel.grid.minor = element_blank(),
+    plot.background = element_rect(fill = "white", color = NA)
+  )
+
+# Colores corporativos
+col_principal <- "#2C3E50"
+col_alerta <- "#E74C3C"
+col_exito <- "#27AE60"
+col_advertencia <- "#F39C12"
+col_info <- "#3498DB"
+```
+
+\newpage
+
+# RESUMEN EJECUTIVO
+
+## Datos Analizados
+
+**Periodo:** `r NOMBRE_MES` (30 días)  
+**Personal:** `r TOTAL_PERSONAS` personas  
+**Volumen:** `r format(round(total_alertas_dia, 0), big.mark=",")` alertas/día (promedio)
+
+## Métricas Principales
+
+```{r metricas_principales}
+metricas_resumen <- data.frame(
+  Métrica = c(
+    "Capacidad Instalada",
+    "Tasa de Atención",
+    "Mejora en Equidad",
+    "Productividad"
+  ),
+  Valor = c(
+    paste0(format(round(capacidad_teorica_total, 0), big.mark=","), " gestiones/día"),
+    paste0(round((total_gestiones_dia / total_alertas_dia) * 100, 1), "%"),
+    paste0(round(mejora_equidad, 1), "%"),
+    paste0(round(total_gestiones_dia / TOTAL_PERSONAS, 1), " gestiones/persona/día")
+  )
+)
+
+flextable(metricas_resumen) %>%
+  theme_booktabs() %>%
+  bold(part = "header") %>%
+  bg(part = "header", bg = "#2C3E50") %>%
+  color(part = "header", color = "white") %>%
+  align(align = "left", part = "all") %>%
+  width(j = 1, width = 2) %>%
+  width(j = 2, width = 3)
+```
+
+## Hallazgos Principales
+
+### ✅ Buenas Noticias
+
+1. **Capacidad suficiente:** El equipo de `r TOTAL_PERSONAS` personas **SÍ es suficiente** para el volumen total
+2. **Alta eficiencia:** Se atiende el **`r round((total_gestiones_dia/total_alertas_dia)*100, 1)`%** de las alertas
+3. **Volumen manejable:** ~`r round(total_alertas_dia, 0)` alertas/día es un volumen razonable
+4. **Productividad adecuada:** ~`r round(total_gestiones_dia/TOTAL_PERSONAS, 1)` gestiones por persona al día
+
+### ⚠️ Áreas de Mejora
+
+1. **Distribución desigual:** Gran variación en carga de trabajo entre horas
+2. **Horas críticas:** `r criticas_actual` horas con sobrecarga (>100% utilización)
+3. **Desbalance:** Algunas horas con 1 persona, otras con 12 personas
+4. **Oportunidad:** Redistribuir personal puede mejorar equidad en **`r round(mejora_equidad, 1)`%**
+
+\newpage
+
+# CAPACIDAD INSTALADA
+
+## Análisis de Capacidad del Sistema
+
+```{r tabla_capacidad}
+tabla_cap <- data.frame(
+  Métrica = c(
+    "Personal Total",
+    "Personas-Hora/Día",
+    "Alertas Recibidas/Día",
+    "Gestiones Realizadas/Día",
+    "Tasa de Atención",
+    "Tiempo Promedio Gestión",
+    "Capacidad Teórica Total",
+    "Brecha de Capacidad",
+    "Utilización del Sistema"
+  ),
+  Valor = c(
+    paste(TOTAL_PERSONAS, "personas"),
+    paste(total_personas_hora, "hrs"),
+    paste0(format(round(total_alertas_dia, 1), big.mark=","), " alertas"),
+    paste0(format(round(total_gestiones_dia, 1), big.mark=","), " gestiones"),
+    paste0(round((total_gestiones_dia/total_alertas_dia)*100, 1), "%"),
+    paste0(round(tiempo_prom_ponderado, 1), " minutos"),
+    paste0(format(round(capacidad_teorica_total, 1), big.mark=","), " gestiones"),
+    paste0(format(round(brecha, 1), big.mark=","), 
+           ifelse(brecha > 0, " (DÉFICIT)", " (SUPERÁVIT)")),
+    paste0(round(utilizacion_sistema, 1), "%")
+  )
+)
+
+flextable(tabla_cap) %>%
+  theme_booktabs() %>%
+  bold(part = "header") %>%
+  bg(part = "header", bg = "#2C3E50") %>%
+  color(part = "header", color = "white") %>%
+  bold(i = c(7,8,9), j = 1) %>%
+  bg(i = c(7,8,9), bg = "#f8f9fa") %>%
+  align(j = 1, align = "left", part = "all") %>%
+  align(j = 2, align = "right", part = "all") %>%
+  width(j = 1, width = 3) %>%
+  width(j = 2, width = 3)
+```
+
+## Interpretación
+
+```{r interpretacion_capacidad, results='asis'}
+if(brecha > 0) {
+  cat('**🔴 Déficit de Capacidad Detectado**\n\n')
+  cat('El sistema presenta un déficit de **', 
+      format(round(brecha, 1), big.mark=","), 
+      ' alertas/día**. Se recomienda:\n\n')
+  cat('- Redistribuir personal según demanda por hora\n')
+  personas_add <- ceiling(brecha / (total_gestiones_dia/TOTAL_PERSONAS))
+  cat('- Evaluar contratación de aproximadamente **', personas_add, ' personas adicionales**\n')
+  cat('- Optimizar procesos para reducir tiempo promedio de gestión\n\n')
+} else {
+  cat('**✅ Capacidad Suficiente**\n\n')
+  cat('El sistema tiene capacidad suficiente. El foco debe estar en **optimizar la distribución de personal** por hora para mejorar la eficiencia y balance de carga.\n\n')
+}
+```
+
+\newpage
+
+# VISUALIZACIONES
+
+## Gráfica 1: Panorama General
+
+```{r grafica_panorama, fig.width=7, fig.height=5, fig.cap="Distribución de alertas y personal por hora del día"}
+ggplot(datos, aes(x = Hora)) +
+  geom_col(aes(y = Alertas_Dia, fill = "Alertas/día"), alpha = 0.6, width = 0.8) +
+  geom_line(aes(y = Dotacion * 4, color = "Dotación Actual"), size = 1.2) +
+  geom_line(aes(y = Dotacion_Optima * 4, color = "Dotación Óptima"), 
+            size = 1.2, linetype = "dashed") +
+  scale_y_continuous(
+    name = "Alertas por Día",
+    sec.axis = sec_axis(~./4, name = "Dotación (Personas)")
+  ) +
+  scale_x_continuous(breaks = seq(0, 23, 2)) +
+  scale_fill_manual(values = c("Alertas/día" = col_alerta)) +
+  scale_color_manual(values = c(
+    "Dotación Actual" = col_info,
+    "Dotación Óptima" = col_exito
+  )) +
+  labs(
+    title = "Panorama General: Alertas y Distribución de Personal",
+    subtitle = paste0("Promedio diario ", NOMBRE_MES),
+    x = "Hora del Día",
+    fill = NULL,
+    color = NULL
+  ) +
+  tema_corp
+```
+
+**Interpretación:** La línea de alertas muestra la demanda por hora. Las líneas de dotación muestran cómo está distribuido el personal actualmente vs. la distribución óptima propuesta.
+
+\newpage
+
+## Gráfica 2: Comparación de Dotación
+
+```{r grafica_comparacion, fig.width=7, fig.height=5, fig.cap="Dotación actual vs óptima por hora"}
+datos_comp <- datos %>%
+  select(Hora, Actual = Dotacion, Óptima = Dotacion_Optima) %>%
+  pivot_longer(cols = c(Actual, Óptima), names_to = "Tipo", values_to = "Personas")
+
+ggplot(datos_comp, aes(x = factor(Hora), y = Personas, fill = Tipo)) +
+  geom_col(position = "dodge", width = 0.7, alpha = 0.85) +
+  geom_text(data = datos %>% filter(abs(Cambio) >= 2),
+            aes(x = factor(Hora), y = pmax(Dotacion, Dotacion_Optima) + 0.6,
+                label = paste0(ifelse(Cambio > 0, "+", ""), Cambio)),
+            inherit.aes = FALSE, size = 2.5, fontface = "bold", color = col_alerta) +
+  scale_fill_manual(values = c("Actual" = "#95A5A6", "Óptima" = col_exito)) +
+  labs(
+    title = "Distribución Equitativa: Actual vs Óptima",
+    subtitle = paste0("Mejora en equidad: ", round(mejora_equidad, 1), "%"),
+    x = "Hora del Día",
+    y = "Número de Personas",
+    fill = NULL
+  ) +
+  tema_corp +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+**Interpretación:** La distribución óptima (verde) redistribuye el personal proporcionalmente a la demanda de cada hora, reduciendo la inequidad en la carga de trabajo.
+
+\newpage
+
+## Gráfica 3: Carga de Trabajo por Persona
+
+```{r grafica_carga, fig.width=7, fig.height=5, fig.cap="Carga de trabajo por persona según hora"}
+datos_carga <- datos %>%
+  select(Hora, Actual = Carga_Trabajo, Óptima = Carga_Optima) %>%
+  pivot_longer(cols = c(Actual, Óptima), names_to = "Escenario", values_to = "Carga")
+
+ggplot(datos_carga, aes(x = Hora, y = Carga, color = Escenario)) +
+  geom_line(size = 1.2, alpha = 0.8) +
+  geom_point(size = 2.5) +
+  geom_hline(yintercept = mean(datos$Carga_Optima), 
+             linetype = "dashed", color = "gray50", size = 0.8) +
+  scale_color_manual(values = c("Actual" = col_alerta, "Óptima" = col_exito)) +
+  scale_x_continuous(breaks = seq(0, 23, 2)) +
+  labs(
+    title = "Carga de Trabajo por Persona",
+    subtitle = "Alertas asignadas por persona según hora del día",
+    x = "Hora del Día",
+    y = "Alertas/Persona/Día",
+    color = NULL
+  ) +
+  tema_corp
+```
+
+**Interpretación:** La línea verde muestra cómo la carga se equilibra con la redistribución, reduciendo picos y valles extremos.
+
+\newpage
+
+## Gráfica 4: Utilización de Capacidad
+
+```{r grafica_utilizacion, fig.width=7, fig.height=5, fig.cap="Utilización de capacidad por hora"}
+ggplot(datos, aes(x = factor(Hora))) +
+  geom_col(aes(y = Utilizacion, fill = "Actual"), 
+           alpha = 0.6, width = 0.4, position = position_nudge(x = -0.2)) +
+  geom_col(aes(y = Utilizacion_Optima, fill = "Óptima"),
+           alpha = 0.6, width = 0.4, position = position_nudge(x = 0.2)) +
+  geom_hline(yintercept = 100, color = col_alerta, size = 1, linetype = "solid") +
+  geom_hline(yintercept = 80, color = col_advertencia, size = 0.8, linetype = "dashed") +
+  annotate("rect", xmin = 0, xmax = 25, ymin = 60, ymax = 80, 
+           alpha = 0.1, fill = col_exito) +
+  scale_fill_manual(values = c("Actual" = col_info, "Óptima" = col_exito)) +
+  scale_y_continuous(labels = function(x) paste0(x, "%"),
+                    limits = c(0, min(max(datos$Utilizacion, datos$Utilizacion_Optima) * 1.1, 300))) +
+  labs(
+    title = "Utilización de Capacidad",
+    subtitle = "Zona verde: óptimo (60-80%)",
+    x = "Hora del Día",
+    y = "Utilización (%)",
+    fill = NULL
+  ) +
+  tema_corp +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+**Interpretación:** El rango óptimo de utilización está entre 60-80% (zona verde). Valores por encima de 100% indican sobrecarga crítica.
+
+\newpage
+
+# DISTRIBUCIÓN EQUITATIVA
+
+## Concepto de Equidad
+
+**Distribución Equitativa ≠ Distribución Igual**
+
+- **Distribución Igual:** Todos reciben lo mismo (ej: 5 personas por hora)
+- **Distribución Equitativa:** Cada uno recibe según su necesidad (proporcional a demanda)
+
+La distribución equitativa optimiza recursos y equilibra la carga de trabajo.
+
+## Plan de Cambios Propuestos
+
+```{r tabla_cambios}
+plan_cambios <- datos %>%
+  filter(Cambio != 0) %>%
+  mutate(
+    Prioridad = case_when(
+      abs(Cambio) >= 3 ~ "Alta",
+      abs(Cambio) >= 2 ~ "Media",
+      TRUE ~ "Baja"
+    ),
+    Accion = ifelse(Cambio > 0, "AUMENTAR", "REDUCIR"),
+    Hora_Label = sprintf("%02d:00", Hora)
+  ) %>%
+  select(
+    Prioridad, Hora_Label, Periodo, Accion,
+    De = Dotacion, A = Dotacion_Optima, Cambio,
+    `Alertas/Día` = Alertas_Dia
+  ) %>%
+  arrange(desc(abs(Cambio))) %>%
+  head(15) %>%
+  mutate(across(where(is.numeric), ~round(., 1)))
+
+flextable(plan_cambios) %>%
+  theme_booktabs() %>%
+  bold(part = "header") %>%
+  bg(part = "header", bg = "#2C3E50") %>%
+  color(part = "header", color = "white") %>%
+  bg(i = ~ Prioridad == "Alta", bg = "#ffebee") %>%
+  bg(i = ~ Prioridad == "Media", bg = "#fff8e1") %>%
+  bg(i = ~ Prioridad == "Baja", bg = "#e8f5e9") %>%
+  bold(i = ~ Prioridad == "Alta", j = 1) %>%
+  align(align = "center", part = "all") %>%
+  width(width = 0.8) %>%
+  fontsize(size = 9, part = "all")
+```
+
+## Métricas de Mejora
+
+```{r metricas_mejora}
+metricas_comp <- data.frame(
+  Métrica = c(
+    "Desviación Estándar Carga",
+    "Carga Máxima",
+    "Carga Mínima",
+    "Horas en Sobrecarga (>80%)",
+    "Horas Críticas (>100%)",
+    "Utilización Promedio"
+  ),
+  Actual = c(
+    round(desv_actual, 1),
+    round(max(datos$Carga_Trabajo), 1),
+    round(min(datos$Carga_Trabajo), 1),
+    sum(datos$Utilizacion > 80),
+    criticas_actual,
+    round(mean(datos$Utilizacion), 1)
+  ),
+  Óptima = c(
+    round(desv_optima, 1),
+    round(max(datos$Carga_Optima), 1),
+    round(min(datos$Carga_Optima), 1),
+    sum(datos$Utilizacion_Optima > 80),
+    criticas_optima,
+    round(mean(datos$Utilizacion_Optima), 1)
+  )
+) %>%
+  mutate(
+    Mejora = Óptima - Actual,
+    `Mejora %` = round((Mejora / Actual) * 100, 1)
+  )
+
+flextable(metricas_comp) %>%
+  theme_booktabs() %>%
+  bold(part = "header") %>%
+  bg(part = "header", bg = "#2C3E50") %>%
+  color(part = "header", color = "white") %>%
+  bg(j = 4, bg = function(x) ifelse(x < 0, "#d4edda", "#f8d7da")) %>%
+  bold(j = 4) %>%
+  align(j = 2:5, align = "center", part = "all") %>%
+  width(j = 1, width = 2.5) %>%
+  width(j = 2:5, width = 1)
+```
+
+\newpage
+
+# ANÁLISIS POR PERIODO
+
+## Estadísticas por Periodo del Día
+
+```{r tabla_periodo}
+flextable(stats_periodo) %>%
+  set_header_labels(
+    Periodo = "Periodo",
+    Horas = "Horas",
+    Dotacion_Prom = "Dot. Prom.",
+    Alertas_Total = "Alertas Total",
+    Pct_Total = "% Total",
+    Carga_Prom = "Carga Prom.",
+    Utilizacion_Prom = "Util. Prom."
+  ) %>%
+  theme_booktabs() %>%
+  bold(part = "header") %>%
+  bg(part = "header", bg = "#2C3E50") %>%
+  color(part = "header", color = "white") %>%
+  bg(i = ~ Utilizacion_Prom > 80, bg = "#ffebee") %>%
+  align(j = 2:7, align = "center", part = "all") %>%
+  width(j = 1, width = 1.5) %>%
+  width(j = 2:7, width = 1)
+```
+
+## Gráfica: Distribución por Periodo
+
+```{r grafica_periodo, fig.width=7, fig.height=4.5, fig.cap="Distribución de alertas por periodo del día"}
+ggplot(stats_periodo, aes(x = reorder(Periodo, -Alertas_Total))) +
+  geom_col(aes(y = Alertas_Total, fill = Periodo), 
+           alpha = 0.8, show.legend = FALSE, width = 0.6) +
+  geom_text(aes(y = Alertas_Total, 
+                label = paste0(round(Alertas_Total, 0), "\n",
+                              Pct_Total, "%")),
+            vjust = -0.3, size = 3.5, fontface = "bold") +
+  scale_fill_brewer(palette = "Set2") +
+  scale_y_continuous(limits = c(0, max(stats_periodo$Alertas_Total) * 1.2)) +
+  labs(
+    title = "Distribución de Alertas por Periodo del Día",
+    subtitle = "Volumen promedio diario por periodo",
+    x = NULL,
+    y = "Alertas/Día"
+  ) +
+  tema_corp
+```
+
+\newpage
+
+# HORAS CRÍTICAS
+
+## Top 10 Horas con Mayor Carga
+
+```{r tabla_criticas}
+top_criticas <- datos %>%
+  arrange(desc(Carga_Trabajo)) %>%
+  head(10) %>%
+  mutate(Hora_Label = sprintf("%02d:00", Hora)) %>%
+  select(
+    Hora = Hora_Label,
+    Periodo,
+    Dotación = Dotacion,
+    `Alertas/Día` = Alertas_Dia,
+    Carga = Carga_Trabajo,
+    `Utilización %` = Utilizacion
+  ) %>%
+  mutate(across(where(is.numeric), ~round(., 1)))
+
+flextable(top_criticas) %>%
+  theme_booktabs() %>%
+  bold(part = "header") %>%
+  bg(part = "header", bg = "#E74C3C") %>%
+  color(part = "header", color = "white") %>%
+  bg(i = 1:3, bg = "#ffebee") %>%
+  bold(i = 1:3) %>%
+  align(j = 3:6, align = "center", part = "all") %>%
+  width(j = 1, width = 1) %>%
+  width(j = 2, width = 1.5) %>%
+  width(j = 3:6, width = 1.2)
+```
+
+\newpage
+
+# RECOMENDACIONES
+
+## Acciones Prioritarias
+
+### 🎯 Corto Plazo (1-2 semanas)
+
+```{r recomendaciones_corto, results='asis'}
+aumentos_prioritarios <- datos %>%
+  filter(Cambio >= 3) %>%
+  arrange(desc(Cambio))
+
+if(nrow(aumentos_prioritarios) > 0) {
+  cat('**🔴 AUMENTAR DOTACIÓN (Prioridad Alta):**\n\n')
+  for(i in 1:min(5, nrow(aumentos_prioritarios))) {
+    row <- aumentos_prioritarios[i,]
+    cat('- **Hora ', sprintf("%02d", row$Hora), ':00** - ',
+        'Aumentar de ', row$Dotacion, ' a ', row$Dotacion_Optima, ' personas ',
+        '(+', row$Cambio, ') | ',
+        round(row$Alertas_Dia, 0), ' alertas/día\n')
+  }
+  cat('\n')
+}
+
+reducciones <- datos %>%
+  filter(Cambio <= -2) %>%
+  arrange(Cambio)
+
+if(nrow(reducciones) > 0) {
+  cat('**🟡 REDUCIR DOTACIÓN (Liberar recursos):**\n\n')
+  for(i in 1:min(5, nrow(reducciones))) {
+    row <- reducciones[i,]
+    cat('- **Hora ', sprintf("%02d", row$Hora), ':00** - ',
+        'Reducir de ', row$Dotacion, ' a ', row$Dotacion_Optima, ' personas ',
+        '(', row$Cambio, ') | ',
+        round(row$Alertas_Dia, 0), ' alertas/día\n')
+  }
+  cat('\n')
+}
+```
+
+### 📊 Mediano Plazo (1-2 meses)
+
+1. **Implementar fase piloto** de redistribución
+2. **Monitorear KPIs** diariamente:
+   - Tiempo de primera respuesta
+   - Tiempo de resolución
+   - Satisfacción del equipo
+   - Calidad de gestiones
+3. **Ajustar** dotación según resultados reales
+4. **Capacitar** al personal en gestión eficiente
+
+### 🚀 Largo Plazo (3-6 meses)
+
+1. **Automatizar** alertas de baja prioridad
+2. **Implementar** sistema de triaje automático
+3. **Reducir** tiempo promedio de gestión a <15 minutos
+4. **Establecer** SLA por tipo de alerta
+
+## Beneficios Esperados
+
+```{r tabla_beneficios}
+beneficios <- data.frame(
+  Área = c("Equidad", "Horas Críticas", "Satisfacción", "Eficiencia"),
+  Beneficio = c(
+    paste0("↑ ", round(mejora_equidad, 1), "%"),
+    paste0("↓ ", criticas_actual - criticas_optima, " horas"),
+    "↑ Mejor balance",
+    "↑ Mejor uso recursos"
+  ),
+  Descripción = c(
+    "Reducción en desviación de carga",
+    "Reducción de horas en sobrecarga",
+    "Mejor balance trabajo-vida",
+    "Optimización de recursos humanos"
+  )
+)
+
+flextable(beneficios) %>%
+  theme_booktabs() %>%
+  bold(part = "header") %>%
+  bg(part = "header", bg = "#27AE60") %>%
+  color(part = "header", color = "white") %>%
+  bold(j = 2) %>%
+  align(j = 2, align = "center", part = "all") %>%
+  width(j = 1, width = 1.5) %>%
+  width(j = 2, width = 1.5) %>%
+  width(j = 3, width = 3)
+```
+
+\newpage
+
+# DATOS DETALLADOS
+
+## Tabla Completa de Análisis por Hora
+
+```{r tabla_completa}
+tabla_detallada <- datos %>%
+  select(
+    Hora,
+    Periodo,
+    `Dot. Actual` = Dotacion,
+    `Dot. Óptima` = Dotacion_Optima,
+    Cambio,
+    `Alertas/Día` = Alertas_Dia,
+    `Tiempo (min)` = Tiempo_Prom,
+    `Carga Actual` = Carga_Trabajo,
+    `Carga Óptima` = Carga_Optima,
+    `Util. %` = Utilizacion,
+    Estado
+  ) %>%
+  mutate(across(where(is.numeric), ~round(., 1)))
+
+flextable(tabla_detallada) %>%
+  theme_booktabs() %>%
+  bold(part = "header") %>%
+  bg(part = "header", bg = "#2C3E50") %>%
+  color(part = "header", color = "white") %>%
+  bg(j = 11, bg = function(x) {
+    case_when(
+      x == "Sobrecarga Crítica" ~ "#ffebee",
+      x == "Sobrecarga" ~ "#fff8e1",
+      x == "Óptimo" ~ "#e8f5e9",
+      TRUE ~ "#e3f2fd"
+    )
+  }) %>%
+  fontsize(size = 8, part = "all") %>%
+  width(width = 0.7) %>%
+  paginate(init = TRUE, hdr_ftr = TRUE)
+```
+
+\newpage
+
+# CONCLUSIONES
+
+## Resumen Final
+
+### 📊 Hallazgos Principales
+
+1. **Capacidad Suficiente:** El equipo de `r TOTAL_PERSONAS` personas **es suficiente** para manejar el volumen de ~`r round(total_alertas_dia, 0)` alertas/día
+
+2. **Alta Eficiencia:** Se logra una tasa de atención del **`r round((total_gestiones_dia/total_alertas_dia)*100, 1)`%**
+
+3. **Oportunidad de Mejora:** La redistribución equitativa puede mejorar el balance de carga en **`r round(mejora_equidad, 1)`%**
+
+4. **Sin Contrataciones:** No se requiere aumentar el equipo, solo **redistribuir mejor**
+
+### 🎯 Acción Inmediata Recomendada
+
+**Implementar distribución equitativa propuesta:**
+
+- Redistribuir personal según demanda horaria
+- Priorizar horas críticas identificadas
+- Monitorear impacto durante 2-4 semanas
+- Ajustar según resultados
+
+**El problema NO es de cantidad, es de DISTRIBUCIÓN**
+
+## Próximos Pasos
+
+```{r proximos_pasos}
+pasos <- data.frame(
+  Fase = c("Semana 1", "Semana 2-4", "Mes 2", "Mes 3+"),
+  Acción = c(
+    "Presentar informe y obtener aprobación",
+    "Implementar redistribución (piloto)",
+    "Monitorear KPIs y ajustar",
+    "Optimizar procesos y automatizar"
+  ),
+  Responsable = c(
+    "Equipo de Análisis",
+    "Gerencia + Supervisores",
+    "Equipo de Operaciones",
+    "Equipo de Tecnología"
+  )
+)
+
+flextable(pasos) %>%
+  theme_booktabs() %>%
+  bold(part = "header") %>%
+  bg(part = "header", bg = "#2C3E50") %>%
+  color(part = "header", color = "white") %>%
+  bold(j = 1) %>%
+  align(j = 1, align = "center", part = "all") %>%
+  width(j = 1, width = 1.2) %>%
+  width(j = 2, width = 3) %>%
+  width(j = 3, width = 2)
+```
+
+---
+
+**Fecha de generación:** `r format(Sys.Date(), '%d de %B de %Y')`  
+**Periodo analizado:** `r NOMBRE_MES`  
+**Herramienta:** R Markdown
+
+---
+
+*Informe generado automáticamente mediante análisis estadístico avanzado*
