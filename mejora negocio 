@@ -1,0 +1,471 @@
+# Guía Completa: Sistema de Detección de Fraude en Power BI
+
+## 📊 1. ESTRUCTURA DE DATOS
+
+### Tabla Principal: **Transacciones**
+```
+TransaccionID | FechaHora | Comercio | TarjetaHash | Monto | Estado | CodigoBIN | PaisOrigen
+-------------|-----------|----------|-------------|-------|--------|-----------|------------
+```
+
+### Campos Requeridos Mínimos:
+- **TransaccionID**: Identificador único
+- **FechaHora**: Timestamp completo (fecha y hora)
+- **Comercio**: Nombre o ID del comercio
+- **TarjetaHash**: Últimos 4 dígitos o hash de la tarjeta
+- **Monto**: Valor de la transacción
+- **Estado**: Aprobada/Rechazada/Pendiente
+
+---
+
+## 🔧 2. MEDIDAS DAX CRÍTICAS
+
+### A) Detección de Testing en Comercio
+
+```dax
+// 1. Transacciones por Minuto
+Txns_Por_Minuto = 
+VAR MinutoActual = SELECTEDVALUE(Transacciones[Minuto])
+VAR ComercioActual = SELECTEDVALUE(Transacciones[Comercio])
+RETURN
+CALCULATE(
+    COUNTROWS(Transacciones),
+    Transacciones[Minuto] = MinutoActual,
+    Transacciones[Comercio] = ComercioActual
+)
+
+// 2. Tarjetas Únicas por Ventana
+Tarjetas_Unicas_Ventana = 
+CALCULATE(
+    DISTINCTCOUNT(Transacciones[TarjetaHash]),
+    WINDOW(
+        -5, REL,  // 5 minutos antes
+        0, REL,   // hasta ahora
+        ORDERBY(Transacciones[FechaHora], ASC)
+    )
+)
+
+// 3. Monto Promedio Ventana
+Monto_Promedio_Ventana = 
+CALCULATE(
+    AVERAGE(Transacciones[Monto]),
+    WINDOW(
+        -5, REL,
+        0, REL,
+        ORDERBY(Transacciones[FechaHora], ASC)
+    )
+)
+
+// 4. Tasa de Rechazo
+Tasa_Rechazo = 
+DIVIDE(
+    CALCULATE(COUNTROWS(Transacciones), Transacciones[Estado] = "Rechazada"),
+    COUNTROWS(Transacciones),
+    0
+) * 100
+
+// 5. Alerta de Testing
+Alerta_Testing = 
+VAR TxnsPorMin = [Txns_Por_Minuto]
+VAR MontoPromedio = [Monto_Promedio_Ventana]
+VAR TasaRechazo = [Tasa_Rechazo]
+RETURN
+IF(
+    TxnsPorMin > 5 && MontoPromedio < 3 && TasaRechazo > 30,
+    "🚨 TESTING DETECTADO",
+    IF(
+        TxnsPorMin > 3 && MontoPromedio < 5,
+        "⚠️ SOSPECHOSO",
+        "✅ Normal"
+    )
+)
+
+// 6. Velocidad de Transacciones (segundos entre txns)
+Velocidad_Segundos = 
+VAR TxnActual = SELECTEDVALUE(Transacciones[FechaHora])
+VAR TxnAnterior = 
+    CALCULATE(
+        MAX(Transacciones[FechaHora]),
+        Transacciones[FechaHora] < TxnActual,
+        ALLEXCEPT(Transacciones, Transacciones[Comercio])
+    )
+RETURN
+IF(
+    NOT ISBLANK(TxnAnterior),
+    DATEDIFF(TxnAnterior, TxnActual, SECOND),
+    BLANK()
+)
+```
+
+### B) Patrón Testeo-Afectación
+
+```dax
+// 1. Identificar Tarjetas en Fase de Testeo
+Tarjetas_Testing = 
+CALCULATETABLE(
+    VALUES(Transacciones[TarjetaHash]),
+    FILTER(
+        Transacciones,
+        Transacciones[Monto] <= 3 &&
+        [Txns_Por_Minuto] > 5
+    )
+)
+
+// 2. Detectar Afectación (mismas tarjetas, montos altos, después)
+Flag_Testeo_Afectacion = 
+VAR TarjetaActual = SELECTEDVALUE(Transacciones[TarjetaHash])
+VAR MontoActual = SELECTEDVALUE(Transacciones[Monto])
+VAR FechaActual = SELECTEDVALUE(Transacciones[FechaHora])
+
+// ¿Esta tarjeta tuvo testing previo?
+VAR TuvoTesting = 
+    CALCULATE(
+        COUNTROWS(Transacciones),
+        Transacciones[TarjetaHash] = TarjetaActual,
+        Transacciones[Monto] <= 3,
+        Transacciones[FechaHora] < FechaActual,
+        Transacciones[FechaHora] >= FechaActual - 1  // Últimas 24 horas
+    ) > 0
+
+// ¿Es una afectación? (monto alto después del testing)
+VAR EsAfectacion = MontoActual > 100 && TuvoTesting
+
+RETURN
+SWITCH(
+    TRUE(),
+    MontoActual <= 3 && [Txns_Por_Minuto] > 5, "🔴 TESTING",
+    EsAfectacion, "🟣 AFECTACIÓN",
+    "⚪ Normal"
+)
+
+// 3. Tiempo entre Testing y Afectación
+Tiempo_Testing_Afectacion = 
+VAR TarjetaActual = SELECTEDVALUE(Transacciones[TarjetaHash])
+VAR FechaActual = SELECTEDVALUE(Transacciones[FechaHora])
+VAR FechaTesting = 
+    CALCULATE(
+        MIN(Transacciones[FechaHora]),
+        Transacciones[TarjetaHash] = TarjetaActual,
+        Transacciones[Monto] <= 3,
+        Transacciones[FechaHora] < FechaActual
+    )
+RETURN
+IF(
+    NOT ISBLANK(FechaTesting),
+    DATEDIFF(FechaTesting, FechaActual, HOUR) & " horas",
+    BLANK()
+)
+
+// 4. Factor de Escalamiento
+Factor_Escalamiento = 
+VAR TarjetaActual = SELECTEDVALUE(Transacciones[TarjetaHash])
+VAR MontoActual = SELECTEDVALUE(Transacciones[Monto])
+VAR MontoTesting = 
+    CALCULATE(
+        AVERAGE(Transacciones[Monto]),
+        Transacciones[TarjetaHash] = TarjetaActual,
+        Transacciones[Monto] <= 3
+    )
+RETURN
+IF(
+    NOT ISBLANK(MontoTesting) && MontoTesting > 0,
+    DIVIDE(MontoActual, MontoTesting, 0),
+    BLANK()
+)
+
+// 5. Contador de Comercios Afectados
+Comercios_Afectados = 
+VAR TarjetasTesteo = [Tarjetas_Testing]
+RETURN
+CALCULATE(
+    DISTINCTCOUNT(Transacciones[Comercio]),
+    Transacciones[TarjetaHash] IN TarjetasTesteo,
+    Transacciones[Monto] > 100
+)
+```
+
+### C) Medidas para KPIs
+
+```dax
+// Total Pérdida Estimada por Fraude
+Perdida_Fraude = 
+CALCULATE(
+    SUM(Transacciones[Monto]),
+    [Flag_Testeo_Afectacion] = "🟣 AFECTACIÓN"
+)
+
+// Transacciones Bloqueadas (éxito del sistema)
+Txns_Bloqueadas = 
+CALCULATE(
+    COUNTROWS(Transacciones),
+    [Alerta_Testing] = "🚨 TESTING DETECTADO",
+    Transacciones[Estado] = "Rechazada"
+)
+
+// Score de Riesgo del Comercio
+Score_Riesgo_Comercio = 
+VAR IncidentesTesting = 
+    CALCULATE(
+        COUNTROWS(Transacciones),
+        [Alerta_Testing] IN {"🚨 TESTING DETECTADO", "⚠️ SOSPECHOSO"}
+    )
+VAR TotalTxns = COUNTROWS(Transacciones)
+RETURN
+DIVIDE(IncidentesTesting, TotalTxns, 0) * 100
+```
+
+---
+
+## 📈 3. VISUALIZACIONES RECOMENDADAS
+
+### Panel 1: DETECCIÓN DE TESTING
+
+**Visual 1: Tabla de Journal del Comercio**
+- Tipo: Tabla
+- Campos:
+  - FechaHora
+  - TarjetaHash
+  - Monto
+  - Estado
+  - [Alerta_Testing] (con formato condicional)
+- Formato Condicional:
+  - Rojo si Alerta_Testing = "🚨 TESTING DETECTADO"
+  - Naranja si = "⚠️ SOSPECHOSO"
+
+**Visual 2: Gráfico de Líneas - Transacciones en el Tiempo**
+- Eje X: FechaHora (por minuto)
+- Eje Y: [Txns_Por_Minuto]
+- Leyenda: Comercio
+- Línea de referencia: 5 transacciones (umbral)
+
+**Visual 3: Gráfico de Barras - Tarjetas Únicas por Ventana**
+- Eje X: Ventana de Tiempo (cada 5 min)
+- Eje Y: [Tarjetas_Unicas_Ventana]
+- Color: Rojo si > 10, Verde si <= 10
+
+**Visual 4: Scatter Chart - Monto vs Frecuencia**
+- Eje X: [Txns_Por_Minuto]
+- Eje Y: [Monto_Promedio_Ventana]
+- Tamaño: COUNT(TarjetaHash)
+- Color: [Alerta_Testing]
+
+### Panel 2: PATRÓN TESTEO-AFECTACIÓN
+
+**Visual 5: Timeline de Testeo-Afectación**
+- Tipo: Gráfico de Áreas Apiladas
+- Eje X: FechaHora (por hora)
+- Valores:
+  - Count de txns donde Flag = "🔴 TESTING"
+  - Count de txns donde Flag = "🟣 AFECTACIÓN"
+- Colores: Rojo y Púrpura
+
+**Visual 6: Tabla de Patrón Detectado**
+- Campos:
+  - TarjetaHash
+  - Comercio Testing
+  - Fecha Testing
+  - Monto Testing
+  - Comercio Afectación
+  - Fecha Afectación
+  - Monto Afectación
+  - [Tiempo_Testing_Afectacion]
+  - [Factor_Escalamiento]
+- Filtro: Mostrar solo donde Flag_Testeo_Afectacion = "🟣 AFECTACIÓN"
+
+**Visual 7: Matriz de Comercios**
+- Filas: Comercio (Testing)
+- Columnas: Comercio (Afectación)
+- Valores: Count(TarjetaHash) compartidas
+- Formato: Mapa de calor
+
+### Panel 3: KPIs Y ALERTAS
+
+**KPI Cards:**
+```
+1. 🚨 Testing Activo
+   [Txns_Por_Minuto] con alerta roja si > 5
+
+2. 💳 Tarjetas en Riesgo
+   COUNT(Tarjetas_Testing)
+
+3. 💰 Pérdida Estimada
+   [Perdida_Fraude] con formato de moneda
+
+4. ⚡ Velocidad Promedio
+   [Velocidad_Segundos] con alerta si < 5 seg
+
+5. 🎯 Tasa de Bloqueo
+   [Txns_Bloqueadas] / Total * 100
+
+6. 📊 Score de Riesgo
+   [Score_Riesgo_Comercio] con gauge
+```
+
+**Visual 8: Tabla de Alertas en Tiempo Real**
+- Filas: FechaHora, Comercio, [Alerta_Testing]
+- Filtro: Solo alertas activas
+- Ordenar: Por FechaHora DESC
+- Actualización: Cada 1 minuto
+
+---
+
+## 🎨 4. FORMATO CONDICIONAL
+
+### En Tablas:
+```dax
+// Color de fondo para montos
+Color_Monto = 
+SWITCH(
+    TRUE(),
+    [Monto] <= 3, "#FCA5A5",      // Rojo claro (testing)
+    [Monto] >= 100, "#C084FC",     // Púrpura (afectación)
+    "#BBF7D0"                      // Verde (normal)
+)
+
+// Color de texto para alertas
+Color_Alerta = 
+SWITCH(
+    [Alerta_Testing],
+    "🚨 TESTING DETECTADO", "#DC2626",
+    "⚠️ SOSPECHOSO", "#F59E0B",
+    "#10B981"
+)
+```
+
+### En Visual de Tarjetas:
+- Background: Degradado de verde a rojo según Score_Riesgo_Comercio
+- Texto: Negrita si Score > 20%
+- Icono: 🚨 si hay alerta activa
+
+---
+
+## 🔄 5. CONFIGURACIÓN DE ACTUALIZACIÓN
+
+### Streaming Dataset (Opcional para tiempo real):
+1. Configurar API REST endpoint
+2. Push transacciones cada 30 segundos
+3. Retención: 1 hora de datos streaming
+
+### Importación Programada:
+```
+Frecuencia: Cada 15 minutos
+Dataset: Transacciones últimas 48 horas
+Histórico: Tabla separada (mensual)
+```
+
+---
+
+## 🎯 6. FILTROS Y SLICERS RECOMENDADOS
+
+```
+1. Fecha/Hora (Rango)
+2. Comercio (Multi-select)
+3. Estado de Transacción
+4. Umbral de Alerta (Deslizador)
+5. Tipo de Fraude (Testing/Afectación/Normal)
+6. Rango de Monto
+```
+
+---
+
+## 📱 7. ALERTAS AUTOMATIZADAS
+
+### Power Automate Flow:
+```
+Trigger: Cuando Score_Riesgo_Comercio > 20%
+Acción 1: Enviar email al equipo de fraude
+Acción 2: Crear ticket en sistema
+Acción 3: Registrar en log de incidentes
+
+Trigger 2: Cuando [Flag_Testeo_Afectacion] = "🟣 AFECTACIÓN"
+Acción: Notificación inmediata + Bloqueo automático
+```
+
+---
+
+## 🔐 8. SEGURIDAD ROW-LEVEL (RLS)
+
+```dax
+// Para que cada comercio solo vea sus datos
+[Comercio] = USERPRINCIPALNAME()
+
+// Para analistas de fraude (ven todo)
+// No aplicar filtro si rol = "Analista_Fraude"
+```
+
+---
+
+## 📊 9. PARÁMETROS WHAT-IF
+
+Crear parámetros ajustables:
+```
+1. Umbral_Txns_Min (default: 5)
+2. Umbral_Monto_Testing (default: 3)
+3. Umbral_Tasa_Rechazo (default: 30)
+4. Ventana_Temporal_Horas (default: 24)
+5. Factor_Escalamiento_Min (default: 100)
+```
+
+Uso en medidas:
+```dax
+Alerta_Testing_Dinamica = 
+IF(
+    [Txns_Por_Minuto] > [Umbral_Txns_Min] &&
+    [Monto_Promedio_Ventana] < [Umbral_Monto_Testing],
+    "ALERTA",
+    "OK"
+)
+```
+
+---
+
+## 🚀 10. OPTIMIZACIÓN DE RENDIMIENTO
+
+### Columnas Calculadas (en tabla):
+```dax
+// En lugar de medidas para campos fijos
+Minuto = FORMAT([FechaHora], "hh:mm")
+Hora = HOUR([FechaHora])
+DiaHora = FORMAT([FechaHora], "YYYY-MM-DD HH")
+EsMontoTesting = IF([Monto] <= 3, TRUE(), FALSE())
+```
+
+### Índices y Relaciones:
+- Crear tabla Calendario relacionada con FechaHora
+- Crear tabla Comercios (dimensión)
+- Índice en TarjetaHash para búsquedas rápidas
+
+### Agregaciones:
+```
+Tabla Pre-Agregada: Transacciones_Hora
+- Agrupar por: Comercio, Hora, TarjetaHash
+- Métricas: SUM(Monto), COUNT(Txns), AVG(Monto)
+```
+
+---
+
+## ✅ CHECKLIST DE IMPLEMENTACIÓN
+
+- [ ] Importar datos de transacciones
+- [ ] Crear columnas calculadas de tiempo
+- [ ] Implementar medidas DAX de detección
+- [ ] Crear visualizaciones del Panel 1
+- [ ] Crear visualizaciones del Panel 2
+- [ ] Configurar KPIs y alertas
+- [ ] Aplicar formato condicional
+- [ ] Configurar slicers y filtros
+- [ ] Probar con datos de prueba
+- [ ] Configurar alertas en Power Automate
+- [ ] Implementar RLS si es necesario
+- [ ] Optimizar rendimiento
+- [ ] Documentar y capacitar usuarios
+
+---
+
+## 💡 TIPS ADICIONALES
+
+1. **Usar Bookmarks** para cambiar entre vista "Testing" y "Testeo-Afectación"
+2. **Drillthrough** desde alertas hacia detalles de transacciones
+3. **Tooltips personalizados** mostrando historial de la tarjeta
+4. **Exportar a Excel** lista de tarjetas sospechosas para investigación
+5. **Mobile Layout** optimizado para alertas en tiempo real
