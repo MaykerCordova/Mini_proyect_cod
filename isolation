@@ -1,0 +1,103 @@
+¡Perfecto! Ahora entiendo el contexto. Estás analizando el tiempo de resolución de alertas de fraude y quieres detectar casos que tardan anormalmente más (o menos) de lo esperado. Isolation Forest es ideal aquí porque las anomalías pueden deberse a múltiples factores legítimos.
+
+## Variables relevantes para tu modelo:
+
+```python
+# Variables sugeridas para detección de anomalías
+variables = [
+    'diferencia_minutos',           # Tu variable principal
+    'tipo_alerta',                  # Tipo de fraude/alerta
+    'prioridad',                    # Alta, media, baja
+    'complejidad_caso',             # Si está disponible
+    'hora_inicio',                  # Hora del día (0-23)
+    'dia_semana',                   # 0-6 (lunes-domingo)
+    'numero_transacciones',         # Cantidad de transacciones en el caso
+    'monto_total',                  # Monto involucrado
+    'analista_experiencia',         # Años o nivel de experiencia
+    'carga_trabajo',                # Casos simultáneos o en cola
+    'requiere_escalamiento',        # Si necesitó aprobación adicional
+    'numero_interacciones'          # Llamadas, emails, verificaciones
+]
+```
+
+## Implementación específica para tu caso:
+
+```python
+from sklearn.ensemble import IsolationForest
+from sklearn.preprocessing import StandardScaler, LabelEncoder
+import pandas as pd
+import numpy as np
+
+# Preparar datos
+df_modelo = df.copy()
+
+# Codificar variables categóricas
+le_tipo = LabelEncoder()
+df_modelo['tipo_alerta_encoded'] = le_tipo.fit_transform(df_modelo['tipo_alerta'])
+
+le_prioridad = LabelEncoder()
+df_modelo['prioridad_encoded'] = le_prioridad.fit_transform(df_modelo['prioridad'])
+
+# Extraer hora del timestamp de inicio (si es necesario)
+df_modelo['hora_inicio'] = pd.to_datetime(df_modelo['timestamp_inicio']).dt.hour
+df_modelo['dia_semana'] = pd.to_datetime(df_modelo['timestamp_inicio']).dt.dayofweek
+
+# Seleccionar features finales
+features = [
+    'diferencia_minutos',
+    'tipo_alerta_encoded',
+    'prioridad_encoded',
+    'hora_inicio',
+    'dia_semana',
+    'monto_total',
+    'numero_transacciones'
+]
+
+X = df_modelo[features].fillna(0)  # Manejar valores nulos
+
+# Normalizar (importante cuando las escalas son muy diferentes)
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X)
+
+# Modelo Isolation Forest
+iso_forest = IsolationForest(
+    contamination=0.08,  # Ajusta según tu % esperado de anomalías
+    random_state=42,
+    n_estimators=200,
+    max_samples='auto'
+)
+
+# Entrenar y predecir
+df_modelo['anomalia'] = iso_forest.fit_predict(X_scaled)
+df_modelo['anomalia_score'] = iso_forest.score_samples(X_scaled)
+
+# Identificar anomalías (score más negativo = más anómalo)
+anomalias = df_modelo[df_modelo['anomalia'] == -1].sort_values('anomalia_score')
+
+print(f"Total de casos: {len(df_modelo)}")
+print(f"Anomalías detectadas: {len(anomalias)}")
+print(f"Porcentaje: {len(anomalias)/len(df_modelo)*100:.2f}%")
+```
+
+## Análisis post-detección:
+
+```python
+# Ver características de las anomalías detectadas
+print("\nEstadísticas de anomalías vs normales:")
+print(df_modelo.groupby('anomalia')[['diferencia_minutos', 'monto_total']].describe())
+
+# Top 10 casos más anómalos
+top_anomalias = anomalias.head(10)[['diferencia_minutos', 'tipo_alerta', 
+                                      'prioridad', 'monto_total', 'anomalia_score']]
+print("\nTop 10 casos más anómalos:")
+print(top_anomalias)
+```
+
+## Consideraciones importantes para tu contexto:
+
+1. **Casos complejos legítimos**: Algunos casos de 1 hora pueden ser legítimos (investigaciones complejas, escalamientos, etc.)
+2. **Ajustar contamination**: Empieza con 5-10% y ajusta según lo que encuentres
+3. **Validación manual**: Revisa una muestra de anomalías detectadas para validar el modelo
+4. **Segmentación**: Considera entrenar modelos separados por tipo de alerta si son muy diferentes
+
+¿Tienes acceso a estas variables? ¿Hay otras específicas de tu proceso que deberíamos incluir?
