@@ -1,0 +1,218 @@
+import win32com.client
+import openpyxl
+import re
+import os
+from openpyxl.utils import get_column_letter
+
+# --- CONFIGURACIÓN ---
+# Actualiza esta ruta al lugar donde guardarás tu archivo Excel
+EXCEL_FILE_PATH = r"C:\Ruta\De\Tu\Equipo\Control_Tickets.xlsx"
+
+# Nombre exacto de la carpeta de Outlook que quieres monitorear (ej. "Bandeja de entrada")
+OUTLOOK_FOLDER_NAME = "Bandeja de entrada"
+
+# Define las columnas que esperas. El orden es importante.
+HEADERS = [
+    'Ticket', 'Fecha ingreso', 'Hora ingreso', 'Fecha inicio', 'Hora inicio',
+    'Descripción', 'Problema', 'Tipo de ticket', 'Fecha solución', 'Hora solución'
+]
+
+# --- CONFIGURACIÓN DE COLUMNAS (¡IMPORTANTE!) ---
+# Mapea tus datos a las letras de las columnas en Excel
+COL_MAPPING = {
+    'Ticket': 'A',
+    'Fecha ingreso': 'B',
+    'Hora ingreso': 'C',
+    'Fecha inicio': 'D',
+    'Hora inicio': 'E',
+    'Descripción': 'F',
+    'Problema': 'G',
+    'Tipo de ticket': 'H',
+    'Fecha solución': 'I',
+    'Hora solución': 'J'
+}
+
+# Columna que usaremos como ID único para buscar
+TICKET_ID_COLUMN = COL_MAPPING['Ticket']
+
+# --- FIN DE LA CONFIGURACIÓN ---
+
+
+def setup_excel_file(filepath):
+    """
+    Verifica si el archivo Excel existe. Si no, lo crea con los encabezados.
+    """
+    if not os.path.exists(filepath):
+        print(f"No se encontró el archivo. Creando uno nuevo en: {filepath}")
+        workbook = openpyxl.Workbook()
+        sheet = workbook.active
+        sheet.title = "Tickets"
+        sheet.append(HEADERS)
+        # Ajusta el ancho de las columnas para mejor legibilidad
+        for i, header in enumerate(HEADERS, 1):
+            col_letter = get_column_letter(i)
+            sheet.column_dimensions[col_letter].width = 20
+        workbook.save(filepath)
+        print("Archivo Excel creado con éxito.")
+    else:
+        print(f"Archivo Excel encontrado en: {filepath}")
+
+def parse_email_body(body):
+    """
+    Extrae los datos estructurados del cuerpo del correo usando regex.
+    Devuelve un diccionario con los datos encontrados.
+    """
+    data = {}
+    
+    # Expresiones regulares para cada campo. 
+    # Usamos re.DOTALL para que '.' incluya saltos de línea (para descripciones)
+    # Usamos re.IGNORECASE para no ser sensibles a mayúsculas/minúsculas
+    patterns = {
+        'Ticket': r"Ticket:\s*(.+)",
+        'Fecha ingreso': r"Fecha ingreso:\s*(.+)",
+        'Hora ingreso': r"Hora ingreso:\s*(.+)",
+        'Fecha inicio': r"Fecha inicio:\s*(.+)",
+        'Hora inicio': r"Hora inicio:\s*(.+)",
+        'Descripción': r"Descripción:\s*(.+)",
+        'Problema': r"Problema:\s*(.+)",
+        'Tipo de ticket': r"Tipo de ticket:\s*(.+)",
+        'Fecha solución': r"Fecha solución:\s*(.+)",
+        'Hora solución': r"Hora solución:\s*(.+)"
+    }
+
+    for key, pattern in patterns.items():
+        # Buscamos cada patrón en el cuerpo del correo
+        match = re.search(pattern, body, re.IGNORECASE | re.DOTALL)
+        if match:
+            # Limpiamos el resultado (quitamos espacios en blanco)
+            data[key] = match.group(1).strip()
+            
+            # Caso especial para campos multilínea como 'Descripción' o 'Problema'
+            # Rompemos la búsqueda en cuanto encontramos otro campo clave
+            if key in ['Descripción', 'Problema']:
+                # Volvemos a 'limpiar' el match si capturó el siguiente campo
+                next_field_match = re.search(r"\n\w+:", data[key])
+                if next_field_match:
+                    data[key] = data[key][:next_field_match.start()].strip()
+                    
+    return data
+
+def find_ticket_row(sheet, ticket_id):
+    """
+    Busca en la columna de 'Ticket' el ID y devuelve el número de fila.
+    """
+    # Iteramos desde la fila 2 para saltar el encabezado
+    for row in range(2, sheet.max_row + 1):
+        cell_value = sheet[f"{TICKET_ID_COLUMN}{row}"].value
+        # Comparamos como strings para evitar problemas de tipo (ej. 001 vs 1)
+        if str(cell_value).strip() == str(ticket_id).strip():
+            return row
+    return None # No se encontró
+
+def process_outlook_emails():
+    """
+    Función principal: se conecta a Outlook, lee correos y actualiza Excel.
+    """
+    
+    # 1. Preparar el archivo Excel
+    setup_excel_file(EXCEL_FILE_PATH)
+    
+    try:
+        # 2. Conectarse a Outlook
+        print("Conectando a Outlook...")
+        outlook = win32com.client.Dispatch("Outlook.Application")
+        mapi = outlook.GetNamespace("MAPI")
+        
+        # Intentar acceder a la carpeta especificada
+        try:
+            inbox = mapi.GetDefaultFolder(6) # 6 = Bandeja de Entrada (default)
+            # Si el nombre no es "Bandeja de entrada", buscar en las carpetas
+            if OUTLOOK_FOLDER_NAME != "Bandeja de entrada":
+                inbox = inbox.Folders[OUTLOOK_FOLDER_NAME]
+        except Exception as e:
+            print(f"Error: No se pudo encontrar la carpeta '{OUTLOOK_FOLDER_NAME}'.")
+            print(f"Detalle: {e}")
+            print("Asegúrate de que el nombre en 'OUTLOOK_FOLDER_NAME' sea exacto.")
+            return
+
+        print(f"Accediendo a la carpeta: '{OUTLOOK_FOLDER_NAME}'")
+        
+        # 3. Filtrar solo correos NO LEÍDOS
+        messages = inbox.Items.Restrict("[Unread]=true")
+        
+        if messages.Count == 0:
+            print("No hay correos no leídos para procesar.")
+            return
+
+        print(f"Se encontraron {messages.Count} correos no leídos.")
+
+        # 4. Cargar el libro de Excel (se hace UNA vez, antes del bucle)
+        workbook = openpyxl.load_workbook(EXCEL_FILE_PATH)
+        sheet = workbook.active
+
+        # 5. Procesar cada correo
+        for message in list(messages): # Usamos list() para poder modificar el original
+            try:
+                print(f"\nProcesando correo: {message.Subject}")
+                
+                # Extraer datos del cuerpo
+                body = message.Body
+                email_data = parse_email_body(body)
+
+                # Verificar si tenemos un Ticket ID
+                ticket_id = email_data.get('Ticket')
+                if not ticket_id:
+                    print("Correo omitido: No se pudo extraer un 'Ticket ID'.")
+                    message.UnRead = False # Marcar como leído para no re-procesar
+                    continue
+
+                # --- ¡AQUÍ ESTÁ LA LÓGICA CLAVE! ---
+                
+                # Buscamos si el ticket ya existe en el Excel
+                row_to_update = find_ticket_row(sheet, ticket_id)
+                
+                # Identificamos si es un correo de SOLUCIÓN (si tiene 'Fecha solución')
+                if 'Fecha solución' in email_data:
+                    # CASO 1: Es un correo de SOLUCIÓN
+                    if row_to_update:
+                        # ¡Éxito! Encontramos el ticket, procedemos a ACTUALIZAR
+                        sheet[f"{COL_MAPPING['Fecha solución']}{row_to_update}"] = email_data.get('Fecha solución')
+                        sheet[f"{COL_MAPPING['Hora solución']}{row_to_update}"] = email_data.get('Hora solución')
+                        print(f"¡Ticket ACTUALIZADO! ID: {ticket_id} (Fila: {row_to_update})")
+                    else:
+                        # Error: Es una solución pero no encontramos el ticket original
+                        print(f"Error: Se recibió SOLUCIÓN para Ticket {ticket_id}, pero no se encontró el registro original.")
+                        # Nota: Podrías decidir crearlo aquí si quisieras, pero 
+                        # seguimos tu lógica de "NO crear nueva fila".
+                
+                else:
+                    # CASO 2: Es un correo INICIAL (no tiene 'Fecha solución')
+                    if row_to_update:
+                        # Duplicado: Ya existe, no hacemos nada
+                        print(f"Ticket OMITIDO: El ID {ticket_id} ya existe (Fila: {row_to_update}).")
+                    else:
+                        # ¡Éxito! Es nuevo, procedemos a AÑADIR
+                        new_row_values = []
+                        for header in HEADERS:
+                            new_row_values.append(email_data.get(header))
+                        
+                        sheet.append(new_row_values)
+                        print(f"¡Ticket NUEVO CREADO! ID: {ticket_id}")
+
+                # 6. Marcar el correo como leído
+                message.UnRead = False
+
+            except Exception as e:
+                print(f"Error procesando un correo (Asunto: {message.Subject}): {e}")
+
+        # 7. Guardar el archivo Excel (se hace UNA vez, al final)
+        workbook.save(EXCEL_FILE_PATH)
+        print("\nProceso completado. Archivo Excel guardado.")
+
+    except Exception as e:
+        print(f"Error fatal conectando con Outlook o Excel: {e}")
+        print("Asegúrate de que Outlook esté instalado y que la ruta del Excel sea correcta.")
+
+# --- Ejecutar el script ---
+if __name__ == "__main__":
+    process_outlook_emails()
