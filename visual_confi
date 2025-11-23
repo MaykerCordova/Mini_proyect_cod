@@ -1,0 +1,64 @@
+{
+    "workbench.iconTheme": "material-icon-theme",
+    "workbench.colorTheme": "Monokai",
+    "workbench.sideBar.location": "right",
+    "workbench.colorCustomizations": {
+        "editorCursor.foreground": "#df7728"
+    },
+    // Configuración del Editor
+    "editor.autoIndent": "full",
+    "editor.cursorBlinking": "expand",
+    "editor.cursorSmoothCaretAnimation": "explicit",
+    "editor.cursorStyle": "line",
+    "editor.cursorWidth": 3,
+    "editor.fontSize": 16,
+    "editor.fontFamily": "Dank Mono, Fira Code, Inconsolata",
+    "editor.fontLigatures": true,
+    "editor.letterSpacing": 0.3,
+    "editor.lineHeight": 25,
+    "editor.minimap.enabled": false,
+    "editor.multiCursorModifier": "ctrlCmd",
+    "editor.smoothScrolling": true,
+    "editor.suggestSelection": "first",
+    "editor.tabCompletion": "on",
+    "editor.tabSize": 2,
+    "editor.wordWrap": "on",
+    "editor.formatOnPaste": true,
+    "editor.formatOnSave": true,
+    "editor.formatOnType": false,
+    // Configuración de Archivos
+    "files.autoSave": "afterDelay",
+    "files.autoSaveDelay": 1000,
+    // Configuración de Búsqueda
+    "search.showLineNumbers": true,
+    // Terminal
+    "terminal.integrated.fontFamily": "FiraCode Nerd Font Mono",
+    "terminal.integrated.tabs.defaultIcon": "file-text",
+    "terminal.integrated.suggest.enabled": true,
+    "python.terminal.shellIntegration.enabled": true,
+    "python.terminal.activateEnvInCurrentTerminal": true,
+    // Configuración de Python
+    "python.languageServer": "Pylance",
+    "python.autoComplete.extraPaths": [],
+    "python.analysis.extraPaths": [],
+    "python.analysis.completeFunctionParens": true,
+    "python.defaultInterpreterPath": "C:\\Users\\josem\\miniconda3\\envs\\maquina\\python.exe",
+    // Otros Ajustes
+    "tabnine.experimentalAutoImports": true,
+    "CodeGPT.apiKey": "LM Studio",
+    "zenMode.centerLayout": false,
+    "background.autoInstall": false,
+    "[quarto]": {
+        "editor.wordWrap": "on",
+        "editor.quickSuggestions": {
+            "comments": "on",
+            "other": "on",
+            "strings": "on"
+        },
+        "editor.quickSuggestionsDelay": 250,
+        "editor.wordBasedSuggestions": "off",
+        "editor.suggestOnTriggerCharacters": true,
+        "editor.unicodeHighlight.ambiguousCharacters": false,
+        "editor.unicodeHighlight.invisibleCharacters": false
+    },
+}
