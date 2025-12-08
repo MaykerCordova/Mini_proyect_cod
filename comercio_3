@@ -1,0 +1,116 @@
+import win32com.client
+import pandas as pd
+import re
+import os
+
+def limpiar_texto(texto_sucio):
+    """
+    Limpia el HTML para dejar solo texto legible.
+    """
+    if not texto_sucio: return ""
+    # Reemplazar saltos de línea HTML por saltos de texto reales
+    texto = texto_sucio.replace('<br>', '\n').replace('</div>', '\n').replace('</p>', '\n')
+    # Quitar etiquetas HTML restantes
+    texto_limpio = re.sub(r'<[^>]+>', '', texto)
+    # Quitar caracteres especiales HTML
+    texto_limpio = texto_limpio.replace('&nbsp;', ' ').replace('&amp;', '&').strip()
+    return texto_limpio
+
+def procesar_correos_monitor_v3():
+    print("--- INICIANDO AUTOMATIZACIÓN 3: COMERCIOS MONITOR ---")
+    
+    # 1. CONEXIÓN OUTLOOK
+    try:
+        outlook = win32com.client.Dispatch("Outlook.Application").GetNamespace("MAPI")
+        inbox = outlook.GetDefaultFolder(6) 
+        
+        # IMPORTANTE: Verifica que el nombre sea EXACTO al de tu Outlook
+        # Si tiene espacios, úsalos (ej: "comercio_tres_fraudes" o "comercio tres fraudes")
+        carpeta_monitor = inbox.Folders("comercio_tres_fraudes") 
+        
+    except Exception as e:
+        print("Error: No se encuentra la carpeta 'comercio_tres_fraudes'.")
+        print("Verifica si el nombre tiene guiones bajos o espacios.")
+        return
+
+    # 2. OBTENER CORREOS NO LEÍDOS
+    items = carpeta_monitor.Items
+    items.Sort("[ReceivedTime]", True)
+    mensajes_filtrados = items.Restrict("[UnRead] = True")
+    
+    cantidad = mensajes_filtrados.Count
+    print(f"Correos pendientes encontrados: {cantidad}")
+
+    if cantidad == 0:
+        return
+
+    # Convertir a lista fija para evitar saltos (el truco que aprendimos)
+    lista_mensajes = list(mensajes_filtrados)
+    lista_datos = []
+
+    # 3. PROCESAR CADA CORREO
+    for mensaje in lista_mensajes:
+        try:
+            # Obtenemos el cuerpo limpio (sin HTML)
+            cuerpo_texto = limpiar_texto(mensaje.HTMLBody)
+            
+            # --- LÓGICA DE EXTRACCIÓN (REGEX) ---
+            # Buscamos patrones específicos basados en tu imagen
+            
+            # 1. Nombre de Comercio
+            # Busca: "Nombre de Comercio" seguido de ":" y captura el resto de la línea
+            match_nombre = re.search(r"Nombre de Comercio\s*[:]\s*(.*)", cuerpo_texto, re.IGNORECASE)
+            nombre = match_nombre.group(1).strip() if match_nombre else "No encontrado"
+            
+            # 2. Código Comercio
+            # Busca: "Código comercio" seguido de ":" y captura los números
+            match_codigo = re.search(r"Código comercio\s*[:]\s*(\d+)", cuerpo_texto, re.IGNORECASE)
+            codigo = match_codigo.group(1).strip() if match_codigo else "No encontrado"
+            
+            # 3. Fecha trx original
+            match_fecha = re.search(r"Fecha trx original\s*[:]\s*(\d+)", cuerpo_texto, re.IGNORECASE)
+            fecha_trx = match_fecha.group(1).strip() if match_fecha else "No encontrado"
+
+            # Validación: Solo guardamos si encontramos al menos el nombre
+            if nombre != "No encontrado":
+                lista_datos.append({
+                    "Fecha_Recepcion_Correo": str(mensaje.ReceivedTime),
+                    "Nombre_Comercio": nombre,
+                    "Codigo_Comercio": codigo,
+                    "Fecha_Trx_Original": fecha_trx
+                })
+                print(f"Extraído: {nombre} | {codigo}")
+            
+            # 4. MARCAR COMO LEÍDO
+            mensaje.UnRead = False
+            mensaje.Save()
+
+        except Exception as e:
+            print(f"Error en un correo: {e}")
+
+    # 4. GUARDAR EN EXCEL
+    if lista_datos:
+        # Nombre diferente para este reporte
+        archivo_excel = "Base_Monitor_Fraudes.xlsx"
+        df_nuevo = pd.DataFrame(lista_datos)
+        
+        # Modo Append (Agregar al final)
+        if os.path.exists(archivo_excel):
+            try:
+                df_antiguo = pd.read_excel(archivo_excel)
+                df_final = pd.concat([df_antiguo, df_nuevo], ignore_index=True)
+            except:
+                df_final = df_nuevo
+        else:
+            df_final = df_nuevo
+            
+        try:
+            df_final.to_excel(archivo_excel, index=False)
+            print(f"¡LISTO! Se guardaron {len(lista_datos)} registros en {archivo_excel}")
+        except PermissionError:
+            print("ERROR: Cierra el Excel antes de ejecutar.")
+    else:
+        print("No se encontraron datos válidos en los correos.")
+
+if __name__ == "__main__":
+    procesar_correos_monitor_v3()
