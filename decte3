@@ -1,0 +1,119 @@
+import win32com.client
+import pandas as pd
+import re
+import os
+
+def limpiar_html(texto_sucio):
+    """
+    Limpia etiquetas HTML y espacios en blanco.
+    """
+    if not texto_sucio:
+        return ""
+    # Decodificar caracteres especiales comunes
+    texto = texto_sucio.replace('&nbsp;', ' ').replace('&amp;', '&').replace('&gt;', '>').replace('&lt;', '<')
+    # Quitar cualquier etiqueta HTML (<...>)
+    texto_limpio = re.sub(r'<[^>]+>', '', texto)
+    # Quitar saltos de línea y espacios extra a los lados
+    return texto_limpio.replace('\r', '').replace('\n', '').strip()
+
+def procesar_correos_bancarios_v3():
+    print("Iniciando proceso de extracción...")
+    
+    # 1. CONEXIÓN OUTLOOK
+    try:
+        outlook = win32com.client.Dispatch("Outlook.Application").GetNamespace("MAPI")
+        inbox = outlook.GetDefaultFolder(6) 
+        carpeta_destino = inbox.Folders("deteccion") # Asegúrate que el nombre sea exacto
+    except Exception as e:
+        print("Error conectando a Outlook o carpeta 'deteccion' no encontrada.")
+        return
+
+    mensajes = carpeta_destino.Items.Restrict("[UnRead] = True")
+    print(f"Correos nuevos encontrados: {mensajes.Count}")
+
+    lista_final = []
+
+    # 2. PROCESAR CADA CORREO
+    for mensaje in mensajes:
+        try:
+            html_body = mensaje.HTMLBody
+            fecha_correo = str(mensaje.ReceivedTime)
+            
+            # Dividimos el HTML en filas (tr)
+            # Usamos una regex flexible que acepta mayúsculas/minúsculas
+            filas = re.split(r'</tr>', html_body, flags=re.IGNORECASE)
+
+            for fila in filas:
+                # Extraer todas las celdas (td) de esa fila
+                # El patrón busca <td (cualquier cosa)> (contenido) </td>
+                celdas = re.findall(r'<td[^>]*>(.*?)</td>', fila, re.IGNORECASE | re.DOTALL)
+                
+                # REGLA 1: Si tiene menos de 2 celdas, no es la tabla que queremos
+                if len(celdas) < 2:
+                    continue
+                
+                # Limpiamos los valores de las primeras dos columnas
+                columna_0 = limpiar_html(celdas[0]) # Debería ser Nombre Comercio
+                columna_1 = limpiar_html(celdas[1]) # Debería ser Cod.Comercio
+                
+                # --- FILTROS DE SEGURIDAD (Aquí estaba el error antes) ---
+                
+                # 1. Si la primera columna está vacía, saltar.
+                if not columna_0:
+                    continue
+
+                # 2. Si la columna 0 dice "Nombre Comercio" o similar, ES UN ENCABEZADO -> SALTAR
+                if "NOMBRE COMERCIO" in columna_0.upper() or "Q TRX" in columna_0.upper():
+                    continue
+
+                # 3. Si la columna 0 dice "Q trx..." (el error de tu excel), ES ENCABEZADO DESFASADO -> SALTAR
+                if "Q TRX" in columna_0.upper():
+                    continue
+                    
+                # 4. Validación de la Columna 1 (Código)
+                # Si el código dice "Cod.Comercio" o "Entry Mode", es basura -> SALTAR
+                if "COD" in columna_1.upper() and "COMERCIO" in columna_1.upper():
+                    continue
+                if "ENTRY" in columna_1.upper():
+                    continue
+
+                # Si pasa todos los filtros, es un dato real
+                lista_final.append({
+                    "Fecha_Correo": fecha_correo,
+                    "Nombre_Comercio": columna_0,
+                    "Codigo_Comercio": columna_1
+                })
+            
+            # Marcar leído
+            mensaje.UnRead = False
+            mensaje.Save()
+
+        except Exception as e:
+            print(f"Error en un correo: {e}")
+            continue
+
+    # 3. GUARDAR RESULTADOS
+    if lista_final:
+        archivo_excel = "Base_Fraude_Comercios_Final.xlsx"
+        df_nuevo = pd.DataFrame(lista_final)
+        
+        # Modo Append (Agregar sin borrar)
+        if os.path.exists(archivo_excel):
+            try:
+                df_antiguo = pd.read_excel(archivo_excel)
+                df_final = pd.concat([df_antiguo, df_nuevo], ignore_index=True)
+            except:
+                df_final = df_nuevo # Si falla leer el antiguo, guarda el nuevo
+        else:
+            df_final = df_nuevo
+            
+        try:
+            df_final.to_excel(archivo_excel, index=False)
+            print(f"¡LISTO! Se guardaron {len(lista_final)} registros CORREGIDOS en {archivo_excel}")
+        except PermissionError:
+            print("ERROR: Cierra el archivo Excel antes de correr el script.")
+    else:
+        print("No se encontraron datos válidos (o los correos ya estaban leídos).")
+
+if __name__ == "__main__":
+    procesar_correos_bancarios_v3()
