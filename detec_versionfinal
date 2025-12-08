@@ -1,0 +1,110 @@
+import win32com.client
+import pandas as pd
+import re
+import os
+
+def limpiar_html(texto_sucio):
+    if not texto_sucio: return ""
+    texto = texto_sucio.replace('&nbsp;', ' ').replace('&amp;', '&').replace('&gt;', '>').replace('&lt;', '<')
+    texto_limpio = re.sub(r'<[^>]+>', '', texto)
+    return texto_limpio.replace('\r', '').replace('\n', '').strip()
+
+def procesar_correos_bancarios_v4():
+    print("--- INICIANDO ESCANEO DE CORREOS ---")
+    
+    try:
+        outlook = win32com.client.Dispatch("Outlook.Application").GetNamespace("MAPI")
+        inbox = outlook.GetDefaultFolder(6) 
+        carpeta_destino = inbox.Folders("deteccion") 
+    except Exception as e:
+        print("Error: No se pudo conectar a la carpeta 'deteccion'.")
+        return
+
+    # 1. OBTENER CORREOS
+    items = carpeta_destino.Items
+    items.Sort("[ReceivedTime]", True) # Ordenar del más reciente al más antiguo
+    mensajes_filtrados = items.Restrict("[UnRead] = True")
+    
+    cantidad = mensajes_filtrados.Count
+    print(f"Total de correos NO LEÍDOS detectados: {cantidad}")
+
+    if cantidad == 0:
+        print("No hay nada pendiente.")
+        return
+
+    # --- CORRECCIÓN CRÍTICA ---
+    # Convertimos la colección dinámica de Outlook en una lista fija de Python.
+    # Esto evita que se salte correos al marcarlos como leídos.
+    lista_mensajes = list(mensajes_filtrados)
+
+    lista_datos = []
+
+    # 2. PROCESAR CADA CORREO DE LA LISTA FIJA
+    for i, mensaje in enumerate(lista_mensajes):
+        try:
+            print(f"Procesando correo {i+1}/{cantidad} de: {mensaje.ReceivedTime}")
+            
+            html_body = mensaje.HTMLBody
+            fecha_correo = str(mensaje.ReceivedTime)
+            
+            # Dividir por filas
+            filas = re.split(r'</tr>', html_body, flags=re.IGNORECASE)
+
+            datos_encontrados_en_correo = False
+
+            for fila in filas:
+                celdas = re.findall(r'<td[^>]*>(.*?)</td>', fila, re.IGNORECASE | re.DOTALL)
+                
+                if len(celdas) < 2: continue
+                
+                columna_0 = limpiar_html(celdas[0]) 
+                columna_1 = limpiar_html(celdas[1]) 
+                
+                # --- FILTROS DE LIMPIEZA ---
+                if not columna_0: continue
+                if "NOMBRE COMERCIO" in columna_0.upper() or "Q TRX" in columna_0.upper(): continue
+                if "COD" in columna_1.upper() and "COMERCIO" in columna_1.upper(): continue
+                if "ENTRY" in columna_1.upper(): continue
+
+                # Guardar dato
+                lista_datos.append({
+                    "Fecha_Correo": fecha_correo,
+                    "Nombre_Comercio": columna_0,
+                    "Codigo_Comercio": columna_1
+                })
+                datos_encontrados_en_correo = True
+            
+            # 3. MARCAR COMO LEÍDO (Ahora es seguro hacerlo)
+            mensaje.UnRead = False
+            mensaje.Save()
+
+        except Exception as e:
+            print(f"Error procesando el correo {i+1}: {e}")
+            continue
+
+    # 4. GUARDAR EN EXCEL
+    if lista_datos:
+        archivo_excel = "Base_Fraude_Comercios_Final.xlsx"
+        df_nuevo = pd.DataFrame(lista_datos)
+        
+        if os.path.exists(archivo_excel):
+            try:
+                df_antiguo = pd.read_excel(archivo_excel)
+                df_final = pd.concat([df_antiguo, df_nuevo], ignore_index=True)
+            except:
+                df_final = df_nuevo
+        else:
+            df_final = df_nuevo
+            
+        try:
+            df_final.to_excel(archivo_excel, index=False)
+            print("------------------------------------------------")
+            print(f"¡PROCESO TERMINADO! Se agregaron {len(lista_datos)} comercios al Excel.")
+            print("------------------------------------------------")
+        except PermissionError:
+            print("ERROR: El Excel está abierto. Ciérralo para poder guardar.")
+    else:
+        print("Se procesaron los correos, pero no se extrajeron datos válidos (quizás eran solo texto sin tabla).")
+
+if __name__ == "__main__":
+    procesar_correos_bancarios_v4()
