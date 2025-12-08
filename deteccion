@@ -1,0 +1,119 @@
+import win32com.client
+import pandas as pd
+import re
+import os
+from datetime import datetime
+
+# --- FUNCIÓN AUXILIAR PARA LIMPIAR TEXTO HTML ---
+def limpiar_html(texto_sucio):
+    """
+    Quita todas las etiquetas tipo <br>, <b>, <span> y deja solo el texto.
+    Ejemplo: "<b>Comercio</b>" -> "Comercio"
+    """
+    if not texto_sucio:
+        return ""
+    # Esta expresión regular busca cualquier cosa entre < y > y la borra
+    texto_limpio = re.sub(r'<[^>]+>', '', texto_sucio)
+    # Quita espacios extra al inicio y final, y caracteres raros
+    return texto_limpio.replace('&nbsp;', ' ').strip()
+
+def procesar_correos_bancarios():
+    # 1. CONEXIÓN CON OUTLOOK
+    try:
+        outlook = win32com.client.Dispatch("Outlook.Application").GetNamespace("MAPI")
+        inbox = outlook.GetDefaultFolder(6) # 6 = Bandeja de entrada
+        
+        # IMPORTANTE: Asegúrate de que esta carpeta exista
+        carpeta_destino = inbox.Folders("deteccion") 
+        
+    except Exception as e:
+        print("Error de conexión o carpeta no encontrada.")
+        print(f"Detalle: {e}")
+        return
+
+    # 2. FILTRAR CORREOS NO LEÍDOS
+    mensajes = carpeta_destino.Items.Restrict("[UnRead] = True")
+    print(f"Procesando {mensajes.Count} correos nuevos...")
+
+    todos_los_datos = []
+
+    # 3. RECORRER CADA CORREO
+    for mensaje in mensajes:
+        try:
+            html_body = mensaje.HTMLBody
+            fecha_correo = str(mensaje.ReceivedTime)
+            
+            # --- LÓGICA PARA LEER LA TABLA (SIN LIBRERÍAS EXTERNAS) ---
+            
+            # Paso A: Dividir el HTML en filas de tabla (etiqueta </tr>)
+            # Esto crea una lista donde cada elemento es una fila de la tabla
+            filas = html_body.split('</tr>')
+            
+            for fila in filas:
+                # Paso B: Buscar celdas dentro de la fila (etiqueta </td>)
+                # Usamos split para separar por celdas
+                celdas = fila.split('</td>')
+                
+                # Necesitamos filas que tengan datos. Generalmente las filas de datos 
+                # tienen varias celdas. Si tiene menos de 2, es basura o formato.
+                if len(celdas) < 2:
+                    continue
+                
+                # Paso C: Extraer el texto "sucio" de la columna 0 (Nombre) y 1 (Codigo)
+                # Nota: Python cuenta desde 0. 
+                # celda[0] = Nombre Comercio
+                # celda[1] = Cod.Comercio
+                # celda[2] = Q trx ...
+                
+                valor_nombre = limpiar_html(celdas[0])
+                valor_codigo = limpiar_html(celdas[1])
+                
+                # Paso D: VALIDACIÓN
+                # Evitamos guardar la fila de encabezados ("Nombre Comercio")
+                # Y evitamos filas vacías
+                if "Nombre Comercio" in valor_nombre or valor_nombre == "":
+                    continue
+                
+                # Si llegamos aquí, es un dato real
+                todos_los_datos.append({
+                    "Fecha_Correo": fecha_correo,
+                    "Nombre_Comercio": valor_nombre,
+                    "Codigo_Comercio": valor_codigo,
+                    # Puedes agregar más columnas si quieres (ej: Entry Mode que sería celdas[3])
+                })
+
+            # 4. MARCAR COMO LEÍDO (Para no repetirlo)
+            mensaje.UnRead = False
+            mensaje.Save()
+
+        except Exception as e:
+            print(f"Error leyendo un correo específico: {e}")
+            continue
+
+    # 5. GUARDAR EN EXCEL
+    if len(todos_los_datos) > 0:
+        archivo_excel = "Base_Fraude_Comercios.xlsx"
+        df_nuevo = pd.DataFrame(todos_los_datos)
+        
+        print(f"¡Éxito! Se encontraron {len(todos_los_datos)} registros nuevos.")
+        
+        # Lógica para no borrar lo anterior (Append)
+        if os.path.exists(archivo_excel):
+            try:
+                df_antiguo = pd.read_excel(archivo_excel)
+                # Unir lo nuevo con lo antiguo
+                df_final = pd.concat([df_antiguo, df_nuevo], ignore_index=True)
+            except PermissionError:
+                print("¡ERROR CRÍTICO! El Excel está abierto. Ciérralo y vuelve a ejecutar.")
+                return
+        else:
+            df_final = df_nuevo
+            
+        df_final.to_excel(archivo_excel, index=False)
+        print(f"Datos guardados en {archivo_excel}")
+        
+    else:
+        print("No se encontraron comercios nuevos en los correos pendientes.")
+
+if __name__ == "__main__":
+    procesar_correos_bancarios()
