@@ -1,0 +1,157 @@
+import win32com.client
+import pandas as pd
+import os
+import time
+
+def procesar_adjuntos_fraude():
+    print("--- INICIANDO PROCESO DE ADJUNTOS ---")
+    
+    # 1. PREPARAR RUTAS
+    ruta_actual = os.getcwd() # Carpeta donde está guardado este script
+    archivo_final = os.path.join(ruta_actual, "Base_Comercios_Adjuntos.xlsx")
+    
+    # 2. CONECTAR A OUTLOOK
+    try:
+        outlook = win32com.client.Dispatch("Outlook.Application").GetNamespace("MAPI")
+        inbox = outlook.GetDefaultFolder(6)
+        # Carpeta específica que mencionaste
+        carpeta_origen = inbox.Folders("comercios_diarios")
+    except Exception as e:
+        print("Error: No se encuentra la carpeta 'comercios_diarios' en tu Outlook.")
+        return
+
+    # 3. FILTRAR CORREOS NO LEÍDOS
+    mensajes = carpeta_origen.Items.Restrict("[UnRead] = True")
+    print(f"Correos pendientes con adjuntos: {mensajes.Count}")
+    
+    if mensajes.Count == 0:
+        return
+
+    lista_mensajes = list(mensajes)
+    datos_recolectados = []
+
+    # Iniciamos la aplicación de Excel (una sola vez para ahorrar memoria)
+    try:
+        app_excel = win32com.client.Dispatch("Excel.Application")
+        app_excel.Visible = False # Que no se vea la ventana
+        app_excel.DisplayAlerts = False # Que no salgan alertas de "Guardar cambios"
+    except:
+        print("Error al iniciar Excel.")
+        return
+
+    # 4. ITERAR CORREOS
+    for mensaje in lista_mensajes:
+        try:
+            fecha_correo = str(mensaje.ReceivedTime)
+            attachments = mensaje.Attachments
+            
+            # Buscar el adjunto correcto
+            adjunto_objetivo = None
+            for att in attachments:
+                nombre = att.FileName.lower()
+                # Condición: que empiece con dashboard_fraude y sea excel
+                if "dashboard_fraude" in nombre and (".xls" in nombre):
+                    adjunto_objetivo = att
+                    break
+            
+            if adjunto_objetivo:
+                print(f"Procesando adjunto: {adjunto_objetivo.FileName}")
+                
+                # Guardar adjunto temporalmente
+                ruta_temp = os.path.join(ruta_actual, adjunto_objetivo.FileName)
+                adjunto_objetivo.SaveAsFile(ruta_temp)
+                
+                # --- PROCESAMIENTO DEL EXCEL ---
+                try:
+                    wb = app_excel.Workbooks.Open(ruta_temp)
+                    
+                    # Intentar ubicar la hoja "Resumen por comercios"
+                    try:
+                        ws = wb.Sheets("Resumen por comercios")
+                    except:
+                        # Si no encuentra el nombre exacto, buscamos una parecida o la primera
+                        ws = wb.Sheets(1) 
+                        print("Advertencia: No se halló hoja exacta, usando la primera.")
+
+                    # Leer toda la hoja usada a la memoria (es más rápido)
+                    # Esto devuelve una tupla de tuplas con todos los datos
+                    datos_hoja = ws.UsedRange.Value
+                    
+                    # Paso A: Encontrar en qué fila están los encabezados y qué columnas son
+                    fila_encabezado = -1
+                    indices_columnas_comercio = []
+                    
+                    # Escaneamos las primeras 20 filas buscando "NOMBRE COMERCIO"
+                    for i, fila in enumerate(datos_hoja[:20]):
+                        for j, celda in enumerate(fila):
+                            if celda and isinstance(celda, str) and "NOMBRE COMERCIO" in celda.upper():
+                                fila_encabezado = i
+                                indices_columnas_comercio.append(j)
+                    
+                    if fila_encabezado != -1 and indices_columnas_comercio:
+                        # Paso B: Extraer datos de esas columnas hacia abajo
+                        # Empezamos desde la fila siguiente al encabezado
+                        for fila_datos in datos_hoja[fila_encabezado+1:]:
+                            for col_idx in indices_columnas_comercio:
+                                # Verificamos que la fila tenga datos en esa columna
+                                if len(fila_datos) > col_idx:
+                                    valor = fila_datos[col_idx]
+                                    
+                                    # Limpieza básica
+                                    if valor and str(valor).strip() != "":
+                                        # Evitar leer totales o basura al final
+                                        if "TOTAL" in str(valor).upper():
+                                            continue
+                                            
+                                        datos_recolectados.append({
+                                            "Fecha_Correo": fecha_correo,
+                                            "Archivo_Origen": adjunto_objetivo.FileName,
+                                            "Nombre_Comercio": str(valor).strip()
+                                        })
+                    else:
+                        print("No se encontró la columna 'NOMBRE COMERCIO' en el Excel.")
+
+                    wb.Close(False) # Cerrar sin guardar
+
+                except Exception as e:
+                    print(f"Error leyendo el Excel interno: {e}")
+                    if 'wb' in locals(): wb.Close(False)
+
+                # Borrar archivo temporal
+                try:
+                    os.remove(ruta_temp)
+                except:
+                    pass
+                
+                # Marcar correo como leído
+                mensaje.UnRead = False
+                mensaje.Save()
+            else:
+                print("Este correo no tenía el adjunto esperado.")
+
+        except Exception as e:
+            print(f"Error general en correo: {e}")
+
+    # 5. CERRAR APP EXCEL Y GUARDAR RESUMEN
+    app_excel.Quit()
+    
+    if datos_recolectados:
+        df_nuevo = pd.DataFrame(datos_recolectados)
+        
+        # Guardar (Append mode)
+        if os.path.exists(archivo_final):
+            try:
+                df_antiguo = pd.read_excel(archivo_final)
+                df_final = pd.concat([df_antiguo, df_nuevo], ignore_index=True)
+            except:
+                df_final = df_nuevo
+        else:
+            df_final = df_nuevo
+            
+        df_final.to_excel(archivo_final, index=False)
+        print(f"¡LISTO! Se extrajeron {len(datos_recolectados)} comercios de los adjuntos.")
+    else:
+        print("No se encontraron nuevos comercios en los adjuntos.")
+
+if __name__ == "__main__":
+    procesar_adjuntos_fraude()
