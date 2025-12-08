@@ -1,0 +1,138 @@
+import win32com.client
+import pandas as pd
+import re
+import os
+from datetime import datetime
+
+# --- FUNCIÓN AUXILIAR PARA LIMPIAR TEXTO HTML ---
+def limpiar_html(texto_sucio):
+    """
+    Quita todas las etiquetas HTML (<b>, <font>, etc.) y limpia espacios extras.
+    """
+    if not texto_sucio:
+        return ""
+    # 1. Quita caracteres de nueva línea y retorno de carro
+    texto_sucio = texto_sucio.replace('\r', '').replace('\n', '')
+    # 2. Expresión regular para eliminar todas las etiquetas HTML
+    texto_limpio = re.sub(r'<[^>]+>', '', texto_sucio)
+    # 3. Quita caracteres de espacio no separables (&nbsp;) y limpia espacios en extremos
+    return texto_limpio.replace('&nbsp;', ' ').strip()
+
+def procesar_correos_bancarios():
+    # 1. CONEXIÓN CON OUTLOOK
+    try:
+        outlook = win32com.client.Dispatch("Outlook.Application").GetNamespace("MAPI")
+        inbox = outlook.GetDefaultFolder(6) 
+        carpeta_destino = inbox.Folders("deteccion") 
+        
+    except Exception as e:
+        print("Error de conexión, Outlook no está abierto, o la carpeta 'deteccion' no existe en la Bandeja de Entrada.")
+        print(f"Detalle: {e}")
+        return
+
+    # 2. FILTRAR CORREOS NO LEÍDOS
+    mensajes = carpeta_destino.Items.Restrict("[UnRead] = True")
+    print(f"Procesando {mensajes.Count} correos nuevos...")
+
+    todos_los_datos = []
+    
+    # Expresiones Regulares Clave:
+    # 1. Identificar la estructura de tabla buscando un patrón de encabezados cercanos:
+    #    'Nombre Comercio' debe estar cerca de 'Cod.Comercio' en el HTML.
+    patron_encabezado = r'(Nombre\s*Comercio).*?(Cod\.?\s*Comercio)' 
+    
+    # 3. RECORRER CADA CORREO
+    for mensaje in mensajes:
+        try:
+            html_body = mensaje.HTMLBody
+            fecha_correo = str(mensaje.ReceivedTime)
+            
+            # Limpiamos el HTML para facilitar la búsqueda de tablas
+            html_limpio_temp = html_body.replace('\r', '').replace('\n', '')
+
+            # Encontramos la posición de las tablas que contienen nuestros encabezados
+            # Esto maneja los casos con múltiples secciones (TESTEO, AFECTACION)
+            matches_tablas = list(re.finditer(patron_encabezado, html_limpio_temp, re.IGNORECASE | re.DOTALL))
+            
+            # Identificar el índice de las columnas Nombre y Código DENTRO de la tabla
+            # Los nombres de encabezado en HTML definen el índice de la data debajo.
+            
+            # Itera sobre CADA TABLA EN EL CORREO
+            for match in matches_tablas:
+                # Delimitar la sección de la tabla donde están los datos
+                # Busca el <table> que contiene el encabezado
+                
+                # Buscamos el inicio de la tabla más cercana (un poco complejo sin Beautiful soup,
+                # por lo que tomaremos la sección del HTML después del encabezado
+                # y antes de la próxima tabla (o el final del correo).
+
+                # Usaremos la lógica de dividir por filas (</tr>) dentro del cuerpo total, 
+                # pero ahora sabiendo dónde está el encabezado.
+                
+                html_desde_encabezado = html_limpio_temp[match.end():]
+                
+                # La lista completa de filas (<td></td>) después del encabezado
+                filas = html_desde_encabezado.split('</tr>')
+
+                # Itera sobre CADA FILA DE DATOS DENTRO DE ESA TABLA
+                for fila in filas:
+                    # Buscamos todas las celdas <td> en la fila
+                    celdas_raw = re.findall(r'<td.*?>(.*?)</td>', fila, re.IGNORECASE)
+                    
+                    if len(celdas_raw) < 2:
+                        continue
+                    
+                    # Limpiamos los valores de las celdas
+                    valor_nombre = limpiar_html(celdas_raw[0])
+                    valor_codigo = limpiar_html(celdas_raw[1])
+                    
+                    # Si el código es demasiado corto o la celda de nombre es un encabezado, descartamos
+                    if valor_nombre == "" or "Comercio" in valor_nombre:
+                        continue
+                    
+                    # Si la celda 1 (Código) es un número largo (típico de Cod. Comercio), asumimos que es data
+                    if len(valor_codigo) < 4 and not valor_codigo.isdigit():
+                         continue
+
+                    # Si llegamos aquí, es un dato real
+                    todos_los_datos.append({
+                        "Fecha_Correo": fecha_correo,
+                        "Nombre_Comercio": valor_nombre,
+                        "Codigo_Comercio": valor_codigo,
+                        # Puedes agregar más columnas: celdas_raw[2] es Q trx, celdas_raw[3] es Entry Mode
+                    })
+
+            # 4. MARCAR COMO LEÍDO (Para no repetirlo)
+            mensaje.UnRead = False
+            mensaje.Save()
+
+        except Exception as e:
+            print(f"Error leyendo un correo específico: {e}")
+            # Si hay un error, el correo queda sin leer para inspección manual
+            continue
+
+    # 5. GUARDAR EN EXCEL (Lógica de Append)
+    if len(todos_los_datos) > 0:
+        archivo_excel = "Base_Fraude_Comercios.xlsx"
+        df_nuevo = pd.DataFrame(todos_los_datos)
+        
+        print(f"¡Éxito! Se encontraron {len(todos_los_datos)} registros nuevos.")
+        
+        if os.path.exists(archivo_excel):
+            try:
+                df_antiguo = pd.read_excel(archivo_excel)
+                df_final = pd.concat([df_antiguo, df_nuevo], ignore_index=True)
+            except PermissionError:
+                print("¡ERROR CRÍTICO! El Excel está abierto. Ciérralo y vuelve a ejecutar.")
+                return
+        else:
+            df_final = df_nuevo
+            
+        df_final.to_excel(archivo_excel, index=False)
+        print(f"Datos guardados en {archivo_excel}")
+        
+    else:
+        print("No se encontraron comercios nuevos en los correos pendientes.")
+
+if __name__ == "__main__":
+    procesar_correos_bancarios()
