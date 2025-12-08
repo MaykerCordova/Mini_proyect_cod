@@ -1,0 +1,150 @@
+import win32com.client
+import pandas as pd
+import re
+import os
+
+def limpiar_html_a_texto(html_sucio):
+    """
+    Convierte el HTML en texto plano, separando elementos con espacios
+    para que los regex no junten palabras.
+    """
+    if not html_sucio: return ""
+    # Reemplazar saltos de línea y cierres de celda por espacios
+    texto = html_sucio.replace('<br>', ' ').replace('</td>', ' ').replace('</div>', ' ')
+    # Eliminar cualquier otra etiqueta HTML
+    texto_limpio = re.sub(r'<[^>]+>', ' ', texto)
+    # Limpiar caracteres especiales y espacios dobles
+    texto_final = texto_limpio.replace('&nbsp;', ' ').replace('\r', '').replace('\n', '')
+    # Reducir múltiples espacios a uno solo
+    return re.sub(' +', ' ', texto_final).strip()
+
+def procesar_correos_ips_hashes():
+    print("--- INICIANDO EXTRACCIÓN DE IPS Y HASHES ---")
+    
+    # 1. CONEXIÓN OUTLOOK Y CARPETA
+    try:
+        outlook = win32com.client.Dispatch("Outlook.Application").GetNamespace("MAPI")
+        inbox = outlook.GetDefaultFolder(6)
+        # ASEGÚRATE que el nombre sea exacto al de tu Outlook
+        carpeta_destino = inbox.Folders("ips_Hash") 
+    except Exception as e:
+        print("Error: No se encuentra la carpeta 'ips_Hash'. Verifica el nombre.")
+        return
+
+    # 2. OBTENER CORREOS NO LEÍDOS
+    items = carpeta_destino.Items
+    items.Sort("[ReceivedTime]", True)
+    mensajes_filtrados = items.Restrict("[UnRead] = True")
+    
+    cantidad = mensajes_filtrados.Count
+    print(f"Correos pendientes encontrados: {cantidad}")
+
+    if cantidad == 0:
+        return
+
+    lista_mensajes = list(mensajes_filtrados)
+    
+    # Listas separadas para almacenar los resultados
+    todos_los_hashes = []
+    todos_los_ips = []
+
+    # --- PATRONES REGEX ---
+    # Patrón para IP: 4 grupos de 1 a 3 dígitos separados por puntos
+    regex_ip = r'\b(?:\d{1,3}\.){3}\d{1,3}\b'
+    
+    # Patrón para Hash: Cadena de caracteres alfanuméricos (a-f, 0-9) 
+    # de al menos 16 caracteres de largo (basado en tus ejemplos).
+    regex_hash = r'\b[a-fA-F0-9]{16,}\b'
+
+    # 3. PROCESAR CADA CORREO
+    for i, mensaje in enumerate(lista_mensajes):
+        try:
+            print(f"Procesando correo {i+1}/{cantidad}...")
+            fecha_correo = str(mensaje.ReceivedTime)
+            
+            # Convertimos todo el HTML a texto plano para buscar fácilmente
+            texto_cuerpo = limpiar_html_a_texto(mensaje.HTMLBody)
+            
+            # Búsqueda de todas las coincidencias en el texto
+            hashes_encontrados = re.findall(regex_hash, texto_cuerpo)
+            ips_encontradas = re.findall(regex_ip, texto_cuerpo)
+            
+            # Guardar los resultados encontrados
+            for h in hashes_encontrados:
+                # Filtro simple para no guardar el mismo hash del ejemplo si se repite
+                if "1e2932eb0f962f6e" in h and len(hashes_encontrados) > 1: continue
+                todos_los_hashes.append({"Fecha_Correo": fecha_correo, "Hash_Detectado": h})
+                
+            for ip in ips_encontradas:
+                 # Filtro para evitar IPs internas o locales comunes si fuera necesario
+                 if ip.startswith("127.0") or ip.startswith("10."): continue
+                 todos_los_ips.append({"Fecha_Correo": fecha_correo, "IP_Detectada": ip})
+
+            # Marcar como leído
+            mensaje.UnRead = False
+            mensaje.Save()
+
+        except Exception as e:
+            print(f"Error en correo {i+1}: {e}")
+            continue
+
+    # 4. GUARDAR EN EXCEL CON DOS HOJAS
+    archivo_excel = "Base_IPs_Hashes.xlsx"
+    
+    # Crear DataFrames
+    df_hashes = pd.DataFrame(todos_los_hashes)
+    df_ips = pd.DataFrame(todos_los_ips)
+    
+    print(f"Se encontraron {len(df_hashes)} Hashes y {len(df_ips)} IPs en total.")
+
+    if not df_hashes.empty or not df_ips.empty:
+        try:
+            # Usamos ExcelWriter para manejar múltiples hojas
+            # Mode 'a' (append) si existe, 'w' (write) si no.
+            modo = 'a' if os.path.exists(archivo_excel) else 'w'
+            # if_sheet_exists='overlay' permite agregar datos sin borrar la hoja entera
+            
+            with pd.ExcelWriter(archivo_excel, mode=modo, engine='openpyxl', if_sheet_exists='overlay') as writer:
+                
+                # Escribir Hashes
+                if not df_hashes.empty:
+                    # Intentar leer datos viejos para concatenar
+                    try:
+                        df_old_h = pd.read_excel(archivo_excel, sheet_name='Hashes')
+                        df_final_h = pd.concat([df_old_h, df_hashes], ignore_index=True)
+                    except:
+                        df_final_h = df_hashes # Si no existe la hoja, usamos la nueva
+                        
+                    df_final_h.to_excel(writer, sheet_name='Hashes', index=False)
+
+                # Escribir IPs
+                if not df_ips.empty:
+                    # Intentar leer datos viejos para concatenar
+                    try:
+                        df_old_ip = pd.read_excel(archivo_excel, sheet_name='IPs')
+                        df_final_ip = pd.concat([df_old_ip, df_ips], ignore_index=True)
+                    except:
+                        df_final_ip = df_ips # Si no existe la hoja, usamos la nueva
+
+                    df_final_ip.to_excel(writer, sheet_name='IPs', index=False)
+                    
+            print(f"¡LISTO! Datos guardados en las pestañas 'Hashes' e 'IPs' de {archivo_excel}")
+
+        except PermissionError:
+            print("ERROR CRÍTICO: El Excel está abierto. Ciérralo y vuelve a ejecutar.")
+        except Exception as e:
+             # Manejo especial si el archivo existe pero no tiene las hojas aún
+             if "Worksheet" in str(e) and modo == 'a':
+                  print("El archivo existía pero faltaban hojas. Intentando regenerar...")
+                  with pd.ExcelWriter(archivo_excel, mode='w', engine='openpyxl') as writer:
+                      if not df_hashes.empty: df_hashes.to_excel(writer, sheet_name='Hashes', index=False)
+                      if not df_ips.empty: df_ips.to_excel(writer, sheet_name='IPs', index=False)
+                  print("¡LISTO! Se regeneró el archivo con ambas hojas.")
+             else:
+                 print(f"Error guardando Excel: {e}")
+
+    else:
+        print("No se encontraron datos válidos de IP o Hash en los correos.")
+
+if __name__ == "__main__":
+    procesar_correos_ips_hashes()
