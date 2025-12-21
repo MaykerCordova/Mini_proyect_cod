@@ -1,0 +1,299 @@
+import win32com.client
+import pandas as pd
+import os
+import re
+import sqlite3 # <--- IMPORTANTE
+from datetime import datetime
+from openpyxl import load_workbook
+from openpyxl.styles import Font, PatternFill
+from openpyxl.utils import get_column_letter
+
+# ==========================================
+# 1. CONFIGURACIÓN
+# ==========================================
+CONFIG = {
+    "RUTA_EXCEL": r"C:\Users\jcordova\Desktop\Bitacora_Fraude\Bitacora_Master.xlsx",
+    
+    # NUEVA RUTA PARA TU RESPALDO SQLITE
+    "RUTA_DB_SQLITE": r"C:\Users\jcordova\Desktop\Bitacora_Fraude\Respaldo_Blindado.db",
+    
+    "RUTA_BACKUP_MSG": r"C:\Users\jcordova\Desktop\Bitacora_Fraude\Correos_Respaldo",
+    "FOLDER_SOLICITUDES": "Bitacora_Solicitudes",
+    "FOLDER_RESPUESTAS": "Bitacora_Respuestas",
+    "REGEX_ID": r"\[(ID-[\w-]+)\]"
+}
+
+# ==========================================
+# 2. CLASE GESTOR SQLITE (NUEVA)
+# ==========================================
+class GestorBackupSQL:
+    def __init__(self, ruta_db):
+        self.ruta_db = ruta_db
+        self.conectar_y_crear_tabla()
+
+    def conectar_y_crear_tabla(self):
+        try:
+            with sqlite3.connect(self.ruta_db) as conn:
+                cursor = conn.cursor()
+                # Tabla espejo del Excel
+                sql_create = """
+                CREATE TABLE IF NOT EXISTS Bitacora (
+                    ID_Unico TEXT PRIMARY KEY,
+                    Fecha_Solicitud TEXT,
+                    Hora_Solicitud TEXT,
+                    Solicitante TEXT,
+                    Regla TEXT,
+                    Herramienta TEXT,
+                    Accion TEXT,
+                    Impacto TEXT,
+                    Clasificacion_Auto TEXT,
+                    Descripcion TEXT,
+                    Estado TEXT,
+                    Fecha_Respuesta TEXT,
+                    Hora_Respuesta TEXT,
+                    Respuesta_De TEXT,
+                    Ruta_Respaldo_MSG TEXT
+                )
+                """
+                cursor.execute(sql_create)
+                conn.commit()
+        except Exception as e:
+            print(f"⚠️ Error SQL Init: {e}")
+
+    def insertar_solicitud(self, datos):
+        try:
+            with sqlite3.connect(self.ruta_db) as conn:
+                cursor = conn.cursor()
+                sql = """
+                INSERT OR IGNORE INTO Bitacora 
+                VALUES (:ID_Unico, :Fecha_Solicitud, :Hora_Solicitud, :Solicitante, 
+                        :Regla, :Herramienta, :Accion, :Impacto, :Clasificacion_Auto,
+                        :Descripcion, :Estado, :Fecha_Respuesta, :Hora_Respuesta, 
+                        :Respuesta_De, :Ruta_Respaldo_MSG)
+                """
+                cursor.execute(sql, datos)
+                conn.commit()
+                print("   💾 Backup OK (Insert SQLite).")
+        except Exception as e:
+            print(f"⚠️ Error SQL Insert: {e}")
+
+    def actualizar_aprobacion(self, id_unico, fecha, hora, quien):
+        try:
+            with sqlite3.connect(self.ruta_db) as conn:
+                cursor = conn.cursor()
+                sql = """
+                UPDATE Bitacora 
+                SET Estado = 'Completado', Fecha_Respuesta = ?, Hora_Respuesta = ?, Respuesta_De = ?
+                WHERE ID_Unico = ?
+                """
+                cursor.execute(sql, (fecha, hora, quien, id_unico))
+                conn.commit()
+                print("   💾 Backup OK (Update SQLite).")
+        except Exception as e:
+            print(f"⚠️ Error SQL Update: {e}")
+
+# ==========================================
+# 3. LÓGICA DE NEGOCIO Y DISEÑO
+# ==========================================
+def calcular_clasificacion(regla, herramienta, accion):
+    r, h, a = str(regla).upper(), str(herramienta).upper(), str(accion).upper()
+    if "TRANSFERENCIA" in r and "PLUS" in h: return "Futuro"
+    elif "FALCON" in h: return "Riesgo Alto"
+    elif "BAJA" in a: return "Mantenimiento"
+    else: return "Estándar"
+
+def embellecer_excel(ruta_excel):
+    try:
+        wb = load_workbook(ruta_excel)
+        ws = wb.active
+        header_font = Font(bold=True, color="FFFFFF")
+        header_fill = PatternFill(start_color="0079C1", end_color="0079C1", fill_type="solid")
+        for cell in ws[1]:
+            cell.font = header_font
+            cell.fill = header_fill
+        ws.auto_filter.ref = ws.dimensions
+        for column in ws.columns:
+            max_length = 0
+            col_letter = get_column_letter(column[0].column)
+            for cell in column:
+                try:
+                    if len(str(cell.value)) > max_length: max_length = len(str(cell.value))
+                except: pass
+            adj_width = min((max_length + 2), 60)
+            ws.column_dimensions[col_letter].width = adj_width
+        wb.save(ruta_excel)
+        print("✨ Excel formateado visualmente.")
+    except Exception as e: print(f"⚠️ Error formato: {e}")
+
+# ==========================================
+# 4. CLASES DE GESTIÓN (OUTLOOK / EXCEL)
+# ==========================================
+class HerramientasOutlook:
+    def __init__(self):
+        try:
+            self.outlook = win32com.client.Dispatch("Outlook.Application").GetNamespace("MAPI")
+            self.inbox = self.outlook.GetDefaultFolder(6)
+        except: print("Error conectando Outlook")
+
+    def buscar_carpeta(self, nombre):
+        try: return self.inbox.Folders[nombre]
+        except: 
+            try: return self.outlook.Folders[nombre]
+            except: return None
+
+    def guardar_msg(self, mail, nombre):
+        if not os.path.exists(CONFIG["RUTA_BACKUP_MSG"]): os.makedirs(CONFIG["RUTA_BACKUP_MSG"])
+        nombre_clean = re.sub(r'[\\/*?:"<>|]', "_", nombre)
+        ruta = os.path.join(CONFIG["RUTA_BACKUP_MSG"], f"{nombre_clean}.msg")
+        try:
+            mail.SaveAs(ruta)
+            return ruta
+        except: return "Error Backup MSG"
+
+class ProcesadorTexto:
+    @staticmethod
+    def extraer_id(asunto):
+        match = re.search(CONFIG["REGEX_ID"], asunto)
+        return match.group(1).upper() if match else None
+
+    @staticmethod
+    def parsear_cuerpo(cuerpo):
+        datos = {}
+        patrones = {
+            "Regla": r"(?i)REGLA:\s*(.*)",
+            "Herramienta": r"(?i)HERRAMIENTA:\s*(.*)",
+            "Accion": r"(?i)ACCION:\s*(.*)",
+            "Impacto": r"(?i)IMPACTO:\s*(.*)",
+            "Descripcion": r"(?i)DESCRIPCION:\s*(.*)"
+        }
+        for k, v in patrones.items():
+            match = re.search(v, cuerpo)
+            datos[k] = match.group(1).strip().replace('\r', '') if match else "No especificado"
+        return datos
+
+class GestorBitacora:
+    def __init__(self):
+        self.ruta = CONFIG["RUTA_EXCEL"]
+        self.columnas = ["ID_Unico", "Fecha_Solicitud", "Hora_Solicitud", "Solicitante", "Regla", "Herramienta", "Accion", "Impacto", "Clasificacion_Auto", "Descripcion", "Estado", "Fecha_Respuesta", "Hora_Respuesta", "Respuesta_De", "Ruta_Respaldo_MSG"]
+        self.cargar_excel()
+
+    def cargar_excel(self):
+        os.makedirs(os.path.dirname(self.ruta), exist_ok=True)
+        if os.path.exists(self.ruta):
+            try: self.df = pd.read_excel(self.ruta)
+            except: self.df = None; print("⛔ CIERRA EL EXCEL")
+        else: self.df = pd.DataFrame(columns=self.columnas)
+
+    def guardar(self):
+        if self.df is not None:
+            try: self.df.to_excel(self.ruta, index=False)
+            except: print("❌ Error guardando Excel")
+
+    def existe_id(self, id_u):
+        if self.df is None or self.df.empty: return False
+        return id_u in self.df["ID_Unico"].astype(str).values
+
+    def insertar_solicitud(self, data):
+        if self.df is not None: self.df = pd.concat([self.df, pd.DataFrame([data])], ignore_index=True)
+
+    def actualizar_aprobacion(self, id_u, fecha, hora, quien):
+        if self.df is None: return False
+        indices = self.df.index[self.df["ID_Unico"] == id_u].tolist()
+        if indices:
+            idx = indices[0]
+            self.df.at[idx, "Estado"] = "Completado"
+            self.df.at[idx, "Fecha_Respuesta"] = fecha
+            self.df.at[idx, "Hora_Respuesta"] = hora
+            self.df.at[idx, "Respuesta_De"] = quien
+            return True
+        return False
+
+# ==========================================
+# 5. MAIN (FUSIÓN)
+# ==========================================
+def main():
+    print("--- 🤖 ROBOT DE BITÁCORA + RESPALDO SQL ---")
+    
+    # Inicializar herramientas
+    outlook = HerramientasOutlook()
+    bitacora = GestorBitacora()
+    # INICIALIZAR SQLITE
+    sql_backup = GestorBackupSQL(CONFIG["RUTA_DB_SQLITE"]) 
+
+    if bitacora.df is None: return
+    cambios = 0
+
+    # --- FASE 1: SOLICITUDES ---
+    carpeta_sol = outlook.buscar_carpeta(CONFIG["FOLDER_SOLICITUDES"])
+    if carpeta_sol:
+        mensajes = [m for m in carpeta_sol.Items if m.UnRead]
+        for m in mensajes:
+            try:
+                id_u = ProcesadorTexto.extraer_id(m.Subject)
+                if id_u and not bitacora.existe_id(id_u):
+                    print(f" [+] Procesando ID: {id_u}")
+                    datos = ProcesadorTexto.parsear_cuerpo(m.Body)
+                    ruta = outlook.guardar_msg(m, f"REQ_{id_u}")
+                    clasif = calcular_clasificacion(datos["Regla"], datos["Herramienta"], datos["Accion"])
+                    
+                    fila = {
+                        "ID_Unico": id_u,
+                        "Fecha_Solicitud": m.SentOn.strftime("%d/%m/%Y"),
+                        "Hora_Solicitud": m.SentOn.strftime("%H:%M"),
+                        "Solicitante": m.SenderName,
+                        "Regla": datos["Regla"],
+                        "Herramienta": datos["Herramienta"],
+                        "Accion": datos["Accion"],
+                        "Impacto": datos["Impacto"],
+                        "Clasificacion_Auto": clasif,
+                        "Descripcion": datos["Descripcion"],
+                        "Estado": "Pendiente",
+                        "Fecha_Respuesta": "", "Hora_Respuesta": "", "Respuesta_De": "",
+                        "Ruta_Respaldo_MSG": ruta
+                    }
+                    
+                    # 1. Guardar en DataFrame (Memoria para Excel)
+                    bitacora.insertar_solicitud(fila)
+                    
+                    # 2. Guardar en SQLite (Base de datos segura)
+                    sql_backup.insertar_solicitud(fila)
+                    
+                    m.UnRead = False
+                    cambios += 1
+            except Exception as e: print(f"Error Solicitud: {e}")
+
+    # --- FASE 2: RESPUESTAS ---
+    carpeta_resp = outlook.buscar_carpeta(CONFIG["FOLDER_RESPUESTAS"])
+    if carpeta_resp:
+        mensajes = [m for m in carpeta_resp.Items if m.UnRead]
+        for m in mensajes:
+            try:
+                id_u = ProcesadorTexto.extraer_id(m.Subject)
+                if id_u and ("CONFORME" in m.Body.upper() or "OK" in m.Body.upper()):
+                    print(f" [OK] Aprobando ID: {id_u}")
+                    outlook.guardar_msg(m, f"RESP_{id_u}")
+                    
+                    fecha_ok = m.ReceivedTime.strftime("%d/%m/%Y")
+                    hora_ok = m.ReceivedTime.strftime("%H:%M")
+                    
+                    # 1. Actualizar Excel
+                    exito = bitacora.actualizar_aprobacion(id_u, fecha_ok, hora_ok, m.SenderName)
+                    
+                    # 2. Actualizar SQLite (Independiente del Excel)
+                    if exito: # Solo si existe la solicitud original
+                        sql_backup.actualizar_aprobacion(id_u, fecha_ok, hora_ok, m.SenderName)
+                        m.UnRead = False
+                        cambios += 1
+            except Exception as e: print(f"Error Respuesta: {e}")
+
+    # --- GUARDADO FINAL ---
+    if cambios > 0:
+        bitacora.guardar()
+        print("🎨 Formateando Excel...")
+        embellecer_excel(CONFIG["RUTA_EXCEL"])
+        print("\n✅ PROCESO COMPLETADO: Excel y SQLite sincronizados.")
+    else:
+        print("💤 No hubo correos nuevos.")
+
+if __name__ == "__main__":
+    main()
