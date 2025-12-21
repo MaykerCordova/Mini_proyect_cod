@@ -1,0 +1,254 @@
+import win32com.client
+import pandas as pd
+import os
+import re
+from datetime import datetime
+
+# ==========================================
+# 1. CONFIGURACIÓN (PARAMETRIZACIÓN)
+# ==========================================
+CONFIG = {
+    # CAMBIA ESTO: Ruta donde quieres que se cree/guarde el Excel
+    "RUTA_EXCEL": r"C:\Users\TuUsuario\Documents\Bitacora_Fraude\Bitacora_Master.xlsx",
+    
+    # CAMBIA ESTO: Ruta donde se guardarán los correos (.msg)
+    "RUTA_BACKUP_MSG": r"C:\Users\TuUsuario\Documents\Bitacora_Fraude\Correos_Respaldo",
+    
+    # Nombres EXACTOS de las carpetas en tu Outlook (dentro de Inbox)
+    "FOLDER_SOLICITUDES": "Bitacora_Solicitudes",
+    "FOLDER_RESPUESTAS": "Bitacora_Respuestas",
+    
+    # Regex para capturar el ID (ej: [ID-2025-001] o [ID-TEST-01])
+    "REGEX_ID": r"\[(ID-[\w-]+)\]"
+}
+
+# ==========================================
+# 2. CLASES DEL SISTEMA
+# ==========================================
+
+class HerramientasOutlook:
+    def __init__(self):
+        try:
+            self.outlook = win32com.client.Dispatch("Outlook.Application").GetNamespace("MAPI")
+            self.inbox = self.outlook.GetDefaultFolder(6) # 6 es el ID estándar del Inbox
+        except Exception as e:
+            print(f"Error conectando con Outlook: {e}")
+
+    def buscar_carpeta(self, nombre_carpeta):
+        """Busca la carpeta dentro de la Bandeja de Entrada (Inbox)"""
+        try:
+            # Intenta buscar dentro del Inbox primero (lo más común)
+            return self.inbox.Folders[nombre_carpeta]
+        except Exception:
+            # Si no está en Inbox, intenta en la raíz (poco común pero posible)
+            try:
+                return self.outlook.Folders[nombre_carpeta]
+            except:
+                print(f"❌ ERROR: No encuentro la carpeta '{nombre_carpeta}' en Outlook.")
+                return None
+
+    def guardar_msg(self, mail_item, nombre_archivo):
+        """Guarda el correo físico (.msg)"""
+        if not os.path.exists(CONFIG["RUTA_BACKUP_MSG"]):
+            os.makedirs(CONFIG["RUTA_BACKUP_MSG"])
+            
+        # Limpiar nombre de caracteres prohibidos en Windows
+        nombre_limpio = re.sub(r'[\\/*?:"<>|]', "_", nombre_archivo)
+        ruta_completa = os.path.join(CONFIG["RUTA_BACKUP_MSG"], f"{nombre_limpio}.msg")
+        
+        try:
+            mail_item.SaveAs(ruta_completa)
+            return ruta_completa
+        except Exception as e:
+            print(f"⚠️ No se pudo guardar el .msg: {e}")
+            return "Error Backup"
+
+class ProcesadorTexto:
+    @staticmethod
+    def extraer_id(asunto):
+        """Busca [ID-XXXX] en el asunto"""
+        match = re.search(CONFIG["REGEX_ID"], asunto)
+        return match.group(1).upper() if match else None
+
+    @staticmethod
+    def parsear_cuerpo(cuerpo):
+        """Extrae variables del cuerpo del correo"""
+        datos = {}
+        # Patrones (Insensible a mayúsculas/minúsculas)
+        patrones = {
+            "Regla": r"(?i)REGLA:\s*(.*)",
+            "Herramienta": r"(?i)HERRAMIENTA:\s*(.*)",
+            "Accion": r"(?i)ACCION:\s*(.*)",
+            "Descripcion": r"(?i)DESCRIPCION:\s*(.*)"
+        }
+        for k, v in patrones.items():
+            match = re.search(v, cuerpo)
+            # Limpieza básica de texto
+            clean_text = match.group(1).strip().replace('\r', '') if match else "No especificado"
+            datos[k] = clean_text
+        return datos
+
+class GestorBitacora:
+    def __init__(self):
+        self.ruta = CONFIG["RUTA_EXCEL"]
+        self.columnas = [
+            "ID_Unico", "Fecha_Solicitud", "Solicitante", "Regla", 
+            "Herramienta", "Accion", "Descripcion", 
+            "Estado", "Fecha_Respuesta", "Respuesta_De", "Ruta_Respaldo_MSG"
+        ]
+        self.cargar_excel()
+
+    def cargar_excel(self):
+        # Crear directorio si no existe
+        carpeta_excel = os.path.dirname(self.ruta)
+        if not os.path.exists(carpeta_excel):
+            os.makedirs(carpeta_excel)
+
+        if os.path.exists(self.ruta):
+            try:
+                self.df = pd.read_excel(self.ruta)
+            except PermissionError:
+                print("⛔ EL EXCEL ESTÁ ABIERTO. Por favor ciérralo y reinicia.")
+                self.df = None
+        else:
+            print("ℹ️ Creando archivo Excel nuevo...")
+            self.df = pd.DataFrame(columns=self.columnas)
+
+    def guardar(self):
+        if self.df is None: return
+        try:
+            self.df.to_excel(self.ruta, index=False)
+            print("✅ Excel actualizado exitosamente.")
+        except PermissionError:
+            print("❌ ERROR AL GUARDAR: Cierra el Excel, está bloqueado por otro programa.")
+
+    def existe_id(self, id_unico):
+        if self.df is None or self.df.empty: return False
+        return id_unico in self.df["ID_Unico"].astype(str).values
+
+    def insertar_solicitud(self, data_dict):
+        if self.df is None: return
+        nueva_fila = pd.DataFrame([data_dict])
+        self.df = pd.concat([self.df, nueva_fila], ignore_index=True)
+
+    def actualizar_aprobacion(self, id_unico, fecha, quien, ruta_msg):
+        if self.df is None: return False
+        # Busca el índice donde el ID coincide
+        indices = self.df.index[self.df["ID_Unico"] == id_unico].tolist()
+        
+        if indices:
+            idx = indices[0]
+            # Actualizamos las celdas
+            self.df.at[idx, "Estado"] = "Completado"
+            self.df.at[idx, "Fecha_Respuesta"] = fecha
+            self.df.at[idx, "Respuesta_De"] = quien
+            # Opcional: Si quieres sobreescribir la ruta del respaldo con la respuesta
+            # self.df.at[idx, "Ruta_Respaldo_MSG"] = ruta_msg 
+            return True
+        return False
+
+# ==========================================
+# 3. EJECUCIÓN PRINCIPAL
+# ==========================================
+def main():
+    print("--- 🤖 INICIANDO ROBOT DE BITÁCORA (MODO PRUEBA) ---")
+    
+    app_outlook = HerramientasOutlook()
+    gestor_excel = GestorBitacora()
+    
+    if gestor_excel.df is None:
+        return # Salir si el Excel está bloqueado
+
+    # ---------------------------------------------------------
+    # FASE 1: PROCESAR SOLICITUDES (Bandeja: Bitacora_Solicitudes)
+    # ---------------------------------------------------------
+    print("\n>>> 1. Buscando nuevas solicitudes...")
+    carpeta_sol = app_outlook.buscar_carpeta(CONFIG["FOLDER_SOLICITUDES"])
+    
+    procesados = 0
+    if carpeta_sol:
+        mensajes = [m for m in carpeta_sol.Items if m.UnRead] # Solo NO LEÍDOS
+        print(f"   Encontrados {len(mensajes)} correos sin leer.")
+        
+        for m in mensajes:
+            try:
+                id_unico = ProcesadorTexto.extraer_id(m.Subject)
+                
+                if id_unico:
+                    if not gestor_excel.existe_id(id_unico):
+                        print(f"   [NUEVO] Procesando ID: {id_unico}")
+                        
+                        # Extraer datos y guardar MSG
+                        datos = ProcesadorTexto.parsear_cuerpo(m.Body)
+                        ruta_msg = app_outlook.guardar_msg(m, f"REQ_{id_unico}")
+                        
+                        # Crear fila
+                        fila = {
+                            "ID_Unico": id_unico,
+                            "Fecha_Solicitud": m.SentOn.strftime("%d/%m/%Y %H:%M"),
+                            "Solicitante": m.SenderName,
+                            "Regla": datos["Regla"],
+                            "Herramienta": datos["Herramienta"],
+                            "Accion": datos["Accion"],
+                            "Descripcion": datos["Descripcion"],
+                            "Estado": "Pendiente",
+                            "Fecha_Respuesta": "",
+                            "Respuesta_De": "",
+                            "Ruta_Respaldo_MSG": ruta_msg
+                        }
+                        gestor_excel.insertar_solicitud(fila)
+                        m.UnRead = False # Marcar como leído
+                        procesados += 1
+                    else:
+                        print(f"   [DUPLICADO] El ID {id_unico} ya existe en Excel.")
+                        m.UnRead = False
+            except Exception as e:
+                print(f"   Error en correo '{m.Subject}': {e}")
+    
+    if procesados > 0: gestor_excel.guardar()
+
+    # ---------------------------------------------------------
+    # FASE 2: PROCESAR RESPUESTAS (Bandeja: Bitacora_Respuestas)
+    # ---------------------------------------------------------
+    print("\n>>> 2. Buscando aprobaciones...")
+    carpeta_resp = app_outlook.buscar_carpeta(CONFIG["FOLDER_RESPUESTAS"])
+    
+    actualizados = 0
+    if carpeta_resp:
+        mensajes_resp = [m for m in carpeta_resp.Items if m.UnRead]
+        print(f"   Encontrados {len(mensajes_resp)} respuestas sin leer.")
+        
+        for m in mensajes_resp:
+            try:
+                id_unico = ProcesadorTexto.extraer_id(m.Subject)
+                
+                if id_unico:
+                    # Chequeo simple de conformidad en el cuerpo
+                    cuerpo_upper = m.Body.upper()
+                    es_conforme = "CONFORME" in cuerpo_upper or "OK" in cuerpo_upper or "APROBADO" in cuerpo_upper
+                    
+                    if es_conforme:
+                        print(f"   [APROBADO] Actualizando ID: {id_unico}")
+                        ruta_msg = app_outlook.guardar_msg(m, f"RESP_{id_unico}")
+                        
+                        exito = gestor_excel.actualizar_aprobacion(
+                            id_unico,
+                            m.ReceivedTime.strftime("%d/%m/%Y %H:%M"),
+                            m.SenderName,
+                            ruta_msg
+                        )
+                        
+                        if exito:
+                            m.UnRead = False # Marcar leido solo si encontró el ID
+                            actualizados += 1
+                        else:
+                            print(f"   ⚠️ Alerta: Llegó respuesta del ID {id_unico} pero NO existe en el Excel.")
+            except Exception as e:
+                print(f"   Error en respuesta '{m.Subject}': {e}")
+
+    if actualizados > 0: gestor_excel.guardar()
+    
+    print("\n--- FIN DE LA EJECUCIÓN ---")
+
+if __name__ == "__main__":
+    main()
