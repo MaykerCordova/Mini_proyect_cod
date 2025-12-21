@@ -1,0 +1,62 @@
+def embellecer_excel(ruta_excel):
+    """
+    Aplica formato visual: Autoajuste de columnas, filtros y encabezados bonitos.
+    """
+    try:
+        # 1. Abrir el archivo con Openpyxl
+        wb = load_workbook(ruta_excel)
+        ws = wb.active # Hoja activa
+
+        # 2. Definir estilos (Negrita, Fondo Azul Scotiabank aprox, Letra Blanca)
+        header_font = Font(bold=True, color="FFFFFF")
+        header_fill = PatternFill(start_color="0079C1", end_color="0079C1", fill_type="solid")
+        
+        # 3. Formatear Encabezados (Fila 1)
+        for cell in ws[1]:
+            cell.font = header_font
+            cell.fill = header_fill
+
+        # 4. Activar Filtros
+        ws.auto_filter.ref = ws.dimensions
+
+        # 5. Auto-ajustar Ancho de Columnas
+        for column in ws.columns:
+            max_length = 0
+            column_letter = get_column_letter(column[0].column)
+            
+            for cell in column:
+                try:
+                    if len(str(cell.value)) > max_length:
+                        max_length = len(str(cell.value))
+                except:
+                    pass
+            
+            # Ajustamos el ancho (con un pequeño margen extra de +2)
+            adjusted_width = (max_length + 2)
+            # Ponemos un límite para que descripciones gigantes no rompan la pantalla
+            if adjusted_width > 50: adjusted_width = 50 
+            
+            ws.column_dimensions[column_letter].width = adjusted_width
+
+        # 6. Guardar cambios
+        wb.save(ruta_excel)
+        print("✨ Excel formateado y embellecido correctamente.")
+        
+    except Exception as e:
+        print(f"⚠️ No se pudo dar formato al Excel: {e}")
+
+
+
+#PASO 3
+def main():
+    # ... (todo tu código anterior) ...
+    
+    # Después de los bloques de guardar (if procesados > 0 o actualizados > 0)
+    # Llama a la función de formato SI hubo cambios.
+    
+    if procesados > 0 or actualizados > 0:
+        print("🎨 Aplicando formato visual...")
+        gestor_excel.guardar() # Asegúrate de guardar primero con pandas
+        embellecer_excel(CONFIG["RUTA_EXCEL"]) # <--- AQUÍ LA LLAMADA MÁGICA
+
+    print("\n--- FIN DE LA EJECUCIÓN ---")
