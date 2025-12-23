@@ -1,0 +1,88 @@
+import pandas as pd
+import pyodbc
+import os
+
+# --- 1. CONFIGURACIÓN DE LA CONEXIÓN ---
+# Cambia esto por la ruta real de tu archivo y el nombre de la tabla en Access
+path_db = r'C:\Ruta\Donde\Esta\Tu_Base_VRM.accdb' 
+nombre_tabla = 'NombreDeLaTablaVRM' # Pregúntale al Senior cómo se llama la tabla dentro del Access
+
+# String de conexión estándar para Access
+conn_str = (
+    r'DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};'
+    r'DBQ=' + path_db + ';'
+)
+
+try:
+    # Crear conexión
+    conn = pyodbc.connect(conn_str)
+    
+    # Cargar la data en un DataFrame (df)
+    print("⏳ Cargando datos desde Access... esto puede tardar dependiendo del tamaño...")
+    query = f"SELECT * FROM [{nombre_tabla}]"
+    df = pd.read_sql(query, conn)
+    conn.close()
+    print(f"✅ Datos cargados exitosamente. Dimensiones: {df.shape}")
+
+except Exception as e:
+    print(f"❌ Error de conexión: {e}")
+    # Si falla, verifica que tengas instalado el 'Microsoft Access Database Engine'
+    exit()
+
+# --- 2. ANÁLISIS DE CALIDAD DE DATOS (DATA QUALITY) ---
+
+print("\n" + "="*40)
+print("1. VISTA PREVIA Y TIPOS DE DATOS")
+print("="*40)
+# Muestra las primeras 5 filas y los tipos de datos (int, object/texto, float)
+print(df.info()) 
+print(df.head())
+
+print("\n" + "="*40)
+print("2. ANÁLISIS DE NULOS (MISSING VALUES)")
+print("="*40)
+# Esto es CRÍTICO. Calcula el porcentaje de datos vacíos por columna
+nulos = df.isnull().sum()
+porcentaje_nulos = (df.isnull().sum() / len(df)) * 100
+tabla_nulos = pd.concat([nulos, porcentaje_nulos], axis=1, keys=['Total Nulos', '% Nulos'])
+# Mostramos solo las columnas que tienen algún nulo, ordenadas de mayor a menor
+print(tabla_nulos[tabla_nulos['Total Nulos'] > 0].sort_values(by='% Nulos', ascending=False))
+
+# --- 3. VALIDACIONES ESPECÍFICAS PARA FRAUDE ---
+
+print("\n" + "="*40)
+print("3. VALIDACIONES CLAVE PARA VRM")
+print("="*40)
+
+# A) ¿Hay duplicados? (Una transacción no debería estar dos veces idéntica)
+# Asumiendo que hay una columna ID (ej: TransactionID o Auth_Code). Si no sabes cuál es, usa todas.
+duplicados = df.duplicated().sum()
+print(f"Filas totalmente duplicadas: {duplicados}")
+
+# B) Cardinalidad (Valores únicos)
+# Nos sirve para ver cuántas reglas diferentes o códigos de respuesta hay
+cols_interes = [col for col in df.columns if 'ID' in col or 'Code' in col or 'Rule' in col]
+
+print("\n--- Conteo de valores únicos en columnas clave ---")
+for col in cols_interes:
+    unique_count = df[col].nunique()
+    print(f"{col}: {unique_count} valores únicos")
+    # Si son pocos valores, muéstralos (ej: Response Code 00, 05, 51)
+    if unique_count < 10:
+        print(f"   Valores: {df[col].unique()}")
+
+# C) Análisis de Fechas (Si existe columna de fecha/hora)
+# Busca columnas que parezcan fechas (ej: 'Date', 'Time', 'Timestamp')
+cols_fecha = [col for col in df.columns if 'date' in col.lower() or 'time' in col.lower()]
+
+if cols_fecha:
+    print(f"\n--- Rango de Fechas detectado en {cols_fecha[0]} ---")
+    try:
+        # Aseguramos que sea formato fecha
+        df[cols_fecha[0]] = pd.to_datetime(df[cols_fecha[0]]) 
+        print(f"Fecha mínima: {df[cols_fecha[0]].min()}")
+        print(f"Fecha máxima: {df[cols_fecha[0]].max()}")
+    except:
+        print("No se pudo convertir automáticamente la fecha. Revisar formato.")
+else:
+    print("\n⚠️ No se detectaron columnas obvias de fecha por nombre.")
