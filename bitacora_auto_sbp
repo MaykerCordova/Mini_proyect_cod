@@ -1,0 +1,410 @@
+import win32com.client
+import pandas as pd
+import os
+import re
+import sqlite3
+from datetime import datetime
+from openpyxl import load_workbook
+from openpyxl.styles import Font, PatternFill, Alignment
+from openpyxl.utils import get_column_letter
+
+# ==========================================
+# 1. CONFIGURACIÓN
+# ==========================================
+CONFIG = {
+    "RUTA_EXCEL": r"C:\Users\jcordova\Scotiabank\Fraude\Bitacora_Master.xlsx",
+    "RUTA_DB_SQLITE": r"C:\Users\jcordova\Scotiabank\Fraude\Respaldo_Blindado.db",
+    "RUTA_BACKUP_MSG": r"C:\Users\jcordova\Scotiabank\Fraude\Evidencia_Correos",
+    "FOLDER_SOLICITUDES": "Bitacora_Solicitudes",
+    "FOLDER_RESPUESTAS": "Bitacora_Respuestas",
+    "REGEX_ID": r"\[(ID-[\w-]+)\]"
+}
+
+# ==========================================
+# 2. LÓGICA DE NEGOCIO (TABLAS DE VERDAD)
+# ==========================================
+
+# Mapeo del Cuadro 1 (Imagen provista)
+MAPA_FALSO_POSITIVO = {
+    "PMFD SBP": "15:01",
+    "PMFD SCB": "15:01",
+    "CORE SBP": "N/A",
+    "CORE SCB": "N/A",
+    "ITC SBP": "N/A",
+    "ITC SCB": "N/A",
+    "RT TD": "5:01",
+    "RT TC": "5:01",
+    "VRM SBP": "5:01",
+    "VRM SCB": "5:01",
+    "VCAS SBP": "5:01",
+    "VCAS SCB": "5:01",
+    "FRM SBP": "5:01",
+    "FRM SCB": "5:01"
+}
+
+def obtener_falso_positivo(herramienta):
+    """
+    Busca la herramienta en el diccionario y devuelve el ratio.
+    Si no encuentra la herramienta exacta, devuelve 'ND' (No Definido).
+    """
+    h_clean = str(herramienta).strip().upper()
+    # Buscamos coincidencias parciales o exactas
+    for key, value in MAPA_FALSO_POSITIVO.items():
+        if key in h_clean:
+            return value
+    return "ND"
+
+# ==========================================
+# 3. GESTOR DE BASE DE DATOS (SQLITE)
+# ==========================================
+class GestorBackupSQL:
+    def __init__(self, ruta_db):
+        self.ruta_db = ruta_db
+        self.conectar_y_crear_tabla()
+
+    def conectar_y_crear_tabla(self):
+        os.makedirs(os.path.dirname(self.ruta_db), exist_ok=True)
+        try:
+            with sqlite3.connect(self.ruta_db) as conn:
+                cursor = conn.cursor()
+                # Esquema actualizado con nuevas columnas
+                sql_create = """
+                CREATE TABLE IF NOT EXISTS Bitacora (
+                    Nro_Correlativo INTEGER,
+                    Fecha TEXT,
+                    Hora TEXT,
+                    Codigo_Generado TEXT,
+                    Maker TEXT,
+                    Solicitado_Por TEXT,
+                    Herramienta TEXT,
+                    Accion TEXT,
+                    Falso_Positivo TEXT,
+                    Institucion TEXT,
+                    Codigo_Condicion TEXT,
+                    Nombre_Condicion TEXT,
+                    Estatus_Condicion TEXT,
+                    Tipo_Condicion TEXT,
+                    Consideraciones TEXT,
+                    Objetivo TEXT,
+                    Estimacion TEXT,
+                    Sustento TEXT,
+                    Checker TEXT,
+                    Enviado_Jefatura TEXT,
+                    Conformidad TEXT,
+                    Canal TEXT,
+                    ID_Sistema TEXT PRIMARY KEY
+                )
+                """
+                cursor.execute(sql_create)
+                conn.commit()
+        except Exception as e:
+            print(f"⚠️ Error SQL Init: {e}")
+
+    def insertar_solicitud(self, datos):
+        try:
+            with sqlite3.connect(self.ruta_db) as conn:
+                cursor = conn.cursor()
+                sql = """
+                INSERT OR IGNORE INTO Bitacora 
+                VALUES (:Nro_Correlativo, :Fecha, :Hora, :Codigo_Generado, :Maker, :Solicitado_Por,
+                        :Herramienta, :Accion, :Falso_Positivo, :Institucion, :Codigo_Condicion, 
+                        :Nombre_Condicion, :Estatus_Condicion, :Tipo_Condicion, :Consideraciones, 
+                        :Objetivo, :Estimacion, :Sustento, :Checker, :Enviado_Jefatura, 
+                        :Conformidad, :Canal, :ID_Sistema)
+                """
+                cursor.execute(sql, datos)
+                conn.commit()
+                print("   💾 [SQLite] Registro insertado.")
+        except Exception as e:
+            print(f"⚠️ Error SQL Insert: {e}")
+
+    def actualizar_aprobacion(self, id_sistema, checker):
+        try:
+            with sqlite3.connect(self.ruta_db) as conn:
+                cursor = conn.cursor()
+                sql = """
+                UPDATE Bitacora 
+                SET Conformidad = 'Completado', Checker = ?
+                WHERE ID_Sistema = ?
+                """
+                cursor.execute(sql, (checker, id_sistema))
+                conn.commit()
+                print("   💾 [SQLite] Aprobación actualizada.")
+        except Exception as e:
+            print(f"⚠️ Error SQL Update: {e}")
+
+# ==========================================
+# 4. DISEÑO Y FORMATO
+# ==========================================
+def embellecer_excel(ruta_excel):
+    try:
+        wb = load_workbook(ruta_excel)
+        ws = wb.active
+        header_font = Font(bold=True, color="FFFFFF")
+        header_fill = PatternFill(start_color="0079C1", end_color="0079C1", fill_type="solid")
+        center_align = Alignment(horizontal='center', vertical='center')
+        
+        for cell in ws[1]:
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = center_align
+
+        ws.auto_filter.ref = ws.dimensions
+
+        for column in ws.columns:
+            max_len = 0
+            col_letter = get_column_letter(column[0].column)
+            for cell in column:
+                try:
+                    if len(str(cell.value)) > max_len: max_len = len(str(cell.value))
+                except: pass
+            
+            ancho = min((max_len + 2), 50)
+            ws.column_dimensions[col_letter].width = ancho
+
+        wb.save(ruta_excel)
+        print("✨ [Excel] Diseño aplicado correctamente.")
+    except Exception as e:
+        print(f"⚠️ Error Diseño: {e}")
+
+# ==========================================
+# 5. CLASES DE GESTIÓN
+# ==========================================
+class HerramientasOutlook:
+    def __init__(self):
+        try:
+            self.outlook = win32com.client.Dispatch("Outlook.Application").GetNamespace("MAPI")
+            self.inbox = self.outlook.GetDefaultFolder(6)
+        except: print("Error conectando a Outlook.")
+
+    def buscar_carpeta(self, nombre):
+        try: return self.inbox.Folders[nombre]
+        except:
+            try: return self.outlook.Folders[nombre]
+            except: return None
+
+    def guardar_msg(self, mail, nombre):
+        if not os.path.exists(CONFIG["RUTA_BACKUP_MSG"]): os.makedirs(CONFIG["RUTA_BACKUP_MSG"])
+        clean_name = re.sub(r'[\\/*?:"<>|]', "_", nombre)
+        ruta = os.path.join(CONFIG["RUTA_BACKUP_MSG"], f"{clean_name}.msg")
+        try:
+            mail.SaveAs(ruta)
+            return ruta
+        except: return "Error guardando MSG"
+
+class ProcesadorTexto:
+    @staticmethod
+    def extraer_id(asunto):
+        match = re.search(CONFIG["REGEX_ID"], asunto)
+        return match.group(1).upper() if match else None
+
+    @staticmethod
+    def parsear_cuerpo(cuerpo):
+        datos = {}
+        # PATRONES ACTUALIZADOS CON TUS NUEVOS CAMPOS
+        # Usamos regex flexible para acentos y mayúsculas
+        patrones = {
+            "Solicitado_Por": r"(?i)SOLICITADO\s*POR:\s*(.*)",
+            "Herramienta": r"(?i)HERRAMIENTA:\s*(.*)",
+            "Accion": r"(?i)ACCION:\s*(.*)",
+            "Institucion": r"(?i)INSTITUCI[OÓ]N:\s*(.*)",
+            "Codigo_Condicion": r"(?i)C[OÓ]DIGO\s*(?:DE)?\s*CONDICI[OÓ]N:\s*(.*)",
+            "Nombre_Condicion": r"(?i)NOMBRE\s*(?:DE)?\s*CONDICI[OÓ]N:\s*(.*)",
+            "Estatus_Condicion": r"(?i)ESTATUS\s*(?:DE)?\s*CONDICI[OÓ]N:\s*(.*)",
+            "Tipo_Condicion": r"(?i)TIPO\s*(?:DE)?\s*CONDICI[OÓ]N:\s*(.*)",
+            "Canal": r"(?i)CANAL:\s*(.*)",
+            "Consideraciones": r"(?i)CONSIDERACIONES:\s*(.*)",
+            "Objetivo": r"(?i)OBJETIVO:\s*(.*)",
+            "Estimacion": r"(?i)ESTIMACION:\s*(.*)" # Asumiendo que no usan tilde en estimación según imagen
+        }
+        for k, v in patrones.items():
+            match = re.search(v, cuerpo)
+            # Limpiamos retornos de carro y espacios extra
+            datos[k] = match.group(1).strip().replace('\r', '') if match else "-"
+        return datos
+
+class GestorBitacora:
+    def __init__(self):
+        self.ruta = CONFIG["RUTA_EXCEL"]
+        # NUEVA ESTRUCTURA DE COLUMNAS DEFINITIVA
+        self.columnas = [
+            "Nro_Correlativo",      # 1
+            "Fecha",                # 2
+            "Hora",                 # 3
+            "Codigo_Generado",      # 4 (Correlativo-Herramienta)
+            "Maker",                # 5 (Quien envía el correo)
+            "Solicitado_Por",       # 6 (Nuevo campo del cuerpo)
+            "Herramienta",          # 7
+            "Accion",               # 8
+            "Falso_Positivo",       # 9 (Automático Cuadro 1)
+            "Institucion",          # 10 (Nuevo)
+            "Codigo_Condicion",     # 11
+            "Nombre_Condicion",     # 12
+            "Estatus_Condicion",    # 13
+            "Tipo_Condicion",       # 14 (Nuevo)
+            "Consideraciones",      # 15
+            "Objetivo",             # 16
+            "Estimacion",           # 17
+            "Sustento",             # 18 (Ruta MSG)
+            "Checker",              # 19
+            "Enviado_Jefatura",     # 20
+            "Conformidad",          # 21
+            "Canal",                # 22
+            "ID_Sistema"            # 23 (Oculto)
+        ]
+        self.cargar_excel()
+
+    def cargar_excel(self):
+        os.makedirs(os.path.dirname(self.ruta), exist_ok=True)
+        if os.path.exists(self.ruta):
+            try: self.df = pd.read_excel(self.ruta)
+            except: self.df = None; print("⛔ CIERRA EL EXCEL PRIMERO.")
+        else:
+            self.df = pd.DataFrame(columns=self.columnas)
+
+    def guardar(self):
+        if self.df is not None:
+            try: self.df.to_excel(self.ruta, index=False)
+            except: print("❌ Error guardando Excel.")
+
+    def obtener_correlativo(self):
+        if self.df is None or self.df.empty: return 1
+        try:
+            numeros = pd.to_numeric(self.df["Nro_Correlativo"], errors='coerce')
+            mx = numeros.max()
+            return 1 if pd.isna(mx) else int(mx) + 1
+        except: return 1
+
+    def existe_id(self, id_sys):
+        if self.df is None or self.df.empty: return False
+        return id_sys in self.df["ID_Sistema"].astype(str).values
+
+    def insertar(self, data):
+        if self.df is not None:
+            self.df = pd.concat([self.df, pd.DataFrame([data])], ignore_index=True)
+
+    def aprobar(self, id_sys, checker):
+        if self.df is None: return False
+        idxs = self.df.index[self.df["ID_Sistema"] == id_sys].tolist()
+        if idxs:
+            idx = idxs[0]
+            self.df.at[idx, "Conformidad"] = "Completado"
+            self.df.at[idx, "Checker"] = checker
+            return True
+        return False
+
+# ==========================================
+# 6. ORQUESTADOR PRINCIPAL
+# ==========================================
+def main():
+    print("--- 🤖 ROBOT DE BITÁCORA 2.0 (Logic Updated) ---")
+    
+    outlook = HerramientasOutlook()
+    bitacora = GestorBitacora()
+    sql = GestorBackupSQL(CONFIG["RUTA_DB_SQLITE"])
+
+    if bitacora.df is None: return
+    cambios = 0
+
+    # --- FASE 1: PROCESAR SOLICITUDES ---
+    sol_folder = outlook.buscar_carpeta(CONFIG["FOLDER_SOLICITUDES"])
+    if sol_folder:
+        msgs = [m for m in sol_folder.Items if m.UnRead]
+        for m in msgs:
+            try:
+                id_sys = ProcesadorTexto.extraer_id(m.Subject)
+                if id_sys and not bitacora.existe_id(id_sys):
+                    print(f" [+] Nuevo Ticket: {id_sys}")
+                    
+                    # 1. Extraer Datos
+                    d = ProcesadorTexto.parsear_cuerpo(m.Body)
+                    ruta_msg = outlook.guardar_msg(m, f"REQ_{id_sys}")
+                    
+                    # 2. Cálculos Automáticos
+                    correlativo = bitacora.obtener_correlativo()
+                    
+                    # Generar código (005-PMFD)
+                    # Tomamos la primera palabra de la herramienta para el código
+                    herramienta_code = d['Herramienta'].split(' ')[0] if d['Herramienta'] != "-" else "ND"
+                    cod_generado = f"{correlativo:03d}-{herramienta_code.upper()}"
+                    
+                    # LÓGICA FALSO POSITIVO (CUADRO 1)
+                    fp_valor = obtener_falso_positivo(d['Herramienta'])
+
+                    # 3. Construir Fila
+                    fila = {
+                        "Nro_Correlativo": correlativo,
+                        "Fecha": m.SentOn.strftime("%d/%m/%Y"),
+                        "Hora": m.SentOn.strftime("%H:%M"),
+                        "Codigo_Generado": cod_generado,
+                        "Maker": m.SenderName,          # Quien envió el correo
+                        "Solicitado_Por": d['Solicitado_Por'], # Extraído del cuerpo
+                        "Herramienta": d['Herramienta'],
+                        "Accion": d['Accion'],
+                        "Falso_Positivo": fp_valor,     # Automático
+                        "Institucion": d['Institucion'],
+                        "Codigo_Condicion": d['Codigo_Condicion'],
+                        "Nombre_Condicion": d['Nombre_Condicion'],
+                        "Estatus_Condicion": d['Estatus_Condicion'],
+                        "Tipo_Condicion": d['Tipo_Condicion'],
+                        "Consideraciones": d['Consideraciones'],
+                        "Objetivo": d['Objetivo'],
+                        "Estimacion": d['Estimacion'],
+                        "Sustento": ruta_msg,
+                        "Checker": "",
+                        "Enviado_Jefatura": "SI",
+                        "Conformidad": "Pendiente",
+                        "Canal": d['Canal'],
+                        "ID_Sistema": id_sys
+                    }
+
+                    bitacora.insertar(fila)
+                    sql.insertar_solicitud(fila)
+                    m.UnRead = False
+                    cambios += 1
+            except Exception as e: print(f"Error Solicitud: {e}")
+
+    # --- FASE 2: RESPUESTAS ---
+    resp_folder = outlook.buscar_carpeta(CONFIG["FOLDER_RESPUESTAS"])
+    if resp_folder:
+        msgs = [m for m in resp_folder.Items if m.UnRead]
+        for m in msgs:
+            try:
+                id_sys = ProcesadorTexto.extraer_id(m.Subject)
+                if id_sys and any(x in m.Body.upper() for x in ["OK", "CONFORME", "APROBADO"]):
+                    print(f" [OK] Aprobado: {id_sys}")
+                    outlook.guardar_msg(m, f"RESP_{id_sys}")
+                    
+                    if bitacora.aprobar(id_sys, m.SenderName):
+                        sql.actualizar_aprobacion(id_sys, m.SenderName)
+                        m.UnRead = False
+                        cambios += 1
+            except: pass
+
+    if cambios > 0:
+        bitacora.guardar()
+        embellecer_excel(CONFIG["RUTA_EXCEL"])
+        print("\n✅ Proceso completado.")
+    else:
+        print("\n💤 Sin novedades.")
+
+if __name__ == "__main__":
+    main()
+
+
+
+
+
+SOLICITADO POR: 
+HERRAMIENTA: 
+ACCION: 
+CODIGO DE CONDICION: 
+INSTITUCION: 
+NOMBRE DE CONDICION: 
+ESTATUS DE CONDICION: 
+CONSIDERACIONES: 
+OBJETIVO: 
+CANAL: 
+TIPO DE CONDICION: 
+ESTIMACION:
+    
